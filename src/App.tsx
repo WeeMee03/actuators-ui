@@ -26,34 +26,52 @@ function App() {
     fetchActuators();
   }, []);
 
-  if (loading) return <p>Loading actuators...</p>;
-  if (error) return <p>Error: {error}</p>;
+  if (loading) return <p style={{ padding: '2rem' }}>Loading actuators...</p>;
+  if (error) return <p style={{ padding: '2rem', color: 'red' }}>Error: {error}</p>;
 
   return (
     <div style={{ padding: '2rem' }}>
       <h1>Actuator List</h1>
-      <table border={1} cellPadding={8}>
-        <thead>
-          <tr>
-            <th>Manufacturer</th>
-            <th>Model Type</th>
-            <th>Rated Torque (Nm)</th>
-            <th>Peak Torque (Nm)</th>
-            <th>Speed (rpm)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {actuators.map((actuator) => (
-            <tr key={actuator.id}>
-              <td>{actuator.manufacturer}</td>
-              <td>{actuator.model_type}</td>
-              <td>{actuator.rated_torque_nm ?? '-'}</td>
-              <td>{actuator.peak_torque_nm ?? '-'}</td>
-              <td>{actuator.rated_speed_rpm ?? '-'}</td>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f2f2f2' }}>
+              <th>Manufacturer</th>
+              <th>Model Type</th>
+              <th>Rated Torque (Nm)</th>
+              <th>Peak Torque (Nm)</th>
+              <th>Speed (rpm)</th>
+              <th>Voltage (V)</th>
+              <th>Peak Torque Density</th>
+              <th>Weight (kg)</th>
+              <th>Link</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {actuators.map((actuator) => (
+              <tr key={actuator.id}>
+                <td>{actuator.manufacturer}</td>
+                <td>{actuator.model_type}</td>
+                <td>{actuator.rated_torque_nm ?? '-'}</td>
+                <td>{actuator.peak_torque_nm ?? '-'}</td>
+                <td>{actuator.rated_speed_rpm ?? '-'}</td>
+                <td>{actuator.dc_voltage_v ?? '-'}</td>
+                <td>{actuator.peak_torque_density_nm_per_kg ?? '-'}</td>
+                <td>{actuator.weight_kg ?? '-'}</td>
+                <td>
+                  {actuator.link ? (
+                    <a href={actuator.link} target="_blank" rel="noreferrer">
+                      View
+                    </a>
+                  ) : (
+                    '-'
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
