@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import type { Actuator } from '../types';
 
@@ -19,8 +20,10 @@ export default function ActuatorTable() {
     weight_kg: '',
     built_in_controller: '',
     dc_voltage_v: '',
-    peak_torque_density_nm_per_kg: '',
+    peak_torque_density_after_gear_nm_per_kg: '',
   });
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     async function fetchActuators() {
@@ -68,7 +71,7 @@ export default function ActuatorTable() {
     { label: 'Weight (kg)', key: 'weight_kg' },
     { label: 'Built-in Controller', key: 'built_in_controller' },
     { label: 'Voltage (V)', key: 'dc_voltage_v' },
-    { label: 'Peak Torque Density (nm/kg)', key: 'peak_torque_density_nm/kg' },
+    { label: 'Peak Torque Density (nm/kg)', key: 'peak_torque_density_after_gear_nm_per_kg' },
     { label: 'Link', key: 'link' },
   ];
 
@@ -121,9 +124,11 @@ export default function ActuatorTable() {
           {filteredActuators.map((a, i) => (
             <tr
               key={a.id ?? i}
+              onClick={() => navigate(`/actuator/${a.id}`)}
               style={{
                 background: i % 2 === 0 ? '#333' : '#292929',
                 transition: 'background 0.2s',
+                cursor: 'pointer',
               }}
             >
               {headers.map((h) => {
@@ -147,6 +152,7 @@ export default function ActuatorTable() {
   );
 }
 
+// Styles
 const thStyle: React.CSSProperties = {
   padding: '12px',
   textAlign: 'left',

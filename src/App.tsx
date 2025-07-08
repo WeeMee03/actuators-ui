@@ -1,13 +1,14 @@
-import React from 'react';
-import ActuatorTable from './components/ActuatorTable'; // Adjust the path if needed
+import { Routes, Route } from 'react-router-dom';
+import ActuatorTable from './components/ActuatorTable';
+import ActuatorDetail from './components/ActuatorDetail'; // you'll create this file
 
-function App() {
+export default function App() {
   return (
     <div style={{ padding: '2rem' }}>
-      <h1>Actuator List</h1>
-      <ActuatorTable />
+      <Routes>
+        <Route path="/" element={<ActuatorTable />} />
+        <Route path="/actuator/:id" element={<ActuatorDetail />} />
+      </Routes>
     </div>
   );
 }
-
-export default App;
