@@ -23,6 +23,9 @@ export default function ActuatorTable() {
     peak_torque_density_after_gear_nm_per_kg: '',
   });
 
+  const [sortKey, setSortKey] = useState<string>('created_at');
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -44,18 +47,32 @@ export default function ActuatorTable() {
     fetchActuators();
   }, []);
 
-  if (loading) return <p>Loading actuators...</p>;
-
   const matchesFilter = (value: any, filter: string) => {
     if (!filter) return true;
     return value?.toString().toLowerCase().includes(filter.toLowerCase());
   };
 
-  const filteredActuators = actuators.filter((a) =>
-    Object.entries(filters).every(([key, filter]) =>
-      matchesFilter((a as any)[key], filter)
+  const filteredActuators = [...actuators]
+    .filter((a) =>
+      Object.entries(filters).every(([key, filter]) =>
+        matchesFilter((a as any)[key], filter)
+      )
     )
-  );
+    .sort((a, b) => {
+      const valA = (a as any)[sortKey];
+      const valB = (b as any)[sortKey];
+
+      if (valA == null) return sortAsc ? -1 : 1;
+      if (valB == null) return sortAsc ? 1 : -1;
+
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortAsc ? valA - valB : valB - valA;
+      }
+
+      return sortAsc
+        ? valA.toString().localeCompare(valB.toString())
+        : valB.toString().localeCompare(valA.toString());
+    });
 
   const headers = [
     { label: 'Manufacturer', key: 'manufacturer' },
@@ -75,49 +92,117 @@ export default function ActuatorTable() {
     { label: 'Link', key: 'link' },
   ];
 
+  const getUniqueValues = (key: keyof Actuator) => {
+    const values = actuators.map(a => a[key]).filter(v => v !== null && v !== undefined);
+    return Array.from(new Set(values));
+  };
+
+  if (loading) return <p>Loading actuators...</p>;
+
   return (
-    <div
-      style={{
-        overflowX: 'auto',
-        padding: '24px',
-        background: '#222',
-        borderRadius: '12px',
-        boxShadow: '0 2px 8px #0003',
-        maxWidth: '100%',
-      }}
-    >
-      <table
-        style={{
-          minWidth: 'max-content',
-          borderCollapse: 'collapse',
-          borderRadius: '8px',
-          boxShadow: '0 1px 4px #0002',
-        }}
-      >
+    <div style={{
+      overflowX: 'auto',
+      padding: '24px',
+      background: '#222',
+      borderRadius: '12px',
+      boxShadow: '0 2px 8px #0003',
+      maxWidth: '100%',
+    }}>
+      {/* Add Actuator Button */}
+      <div style={{ marginBottom: '1rem' }}>
+        <button
+          onClick={() => navigate('/add-actuator')}
+          style={{
+            backgroundColor: '#2563eb',
+            color: 'white',
+            border: 'none',
+            padding: '10px 20px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: '600',
+            fontSize: '1rem',
+          }}
+          aria-label="Add new actuator"
+        >
+          + Add Actuator
+        </button>
+      </div>
+
+      <table style={{
+        minWidth: 'max-content',
+        borderCollapse: 'collapse',
+        borderRadius: '8px',
+        boxShadow: '0 1px 4px #0002',
+      }}>
         <thead>
           <tr style={stickyHeaderStyle}>
-            {headers.map((h) => (
-              <th key={h.key} style={thStyle}>{h.label}</th>
+            {headers.map(h => (
+              <th
+                key={h.key}
+                onClick={() => {
+                  if (sortKey === h.key) {
+                    setSortAsc(!sortAsc);
+                  } else {
+                    setSortKey(h.key);
+                    setSortAsc(true);
+                  }
+                }}
+                style={{
+                  ...thStyle,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {h.label}
+                {sortKey === h.key && (sortAsc ? ' ▲' : ' ▼')}
+              </th>
             ))}
           </tr>
           <tr style={{ backgroundColor: '#1e1e1e' }}>
-            {headers.map((h) =>
-              h.key === 'link' ? (
-                <td key={h.key} style={tdStyle}></td>
-              ) : (
+            {headers.map(h => {
+              const val = (filters as any)[h.key];
+              if (h.key === 'link') return <td key={h.key} style={tdStyle}></td>;
+
+              const isDropdown = ['manufacturer', 'gear_box', 'built_in_controller'].includes(h.key);
+
+              return (
                 <td key={h.key} style={tdStyle}>
-                  <input
-                    type="text"
-                    placeholder="Filter..."
-                    value={(filters as any)[h.key] ?? ''}
-                    onChange={(e) =>
-                      setFilters({ ...filters, [h.key]: e.target.value })
-                    }
-                    style={filterInputStyle}
-                  />
+                  {isDropdown ? (
+                    <select
+                      value={val}
+                      onChange={(e) =>
+                        setFilters({ ...filters, [h.key]: e.target.value })
+                      }
+                      style={filterInputStyle}
+                    >
+                      <option value="">All</option>
+                      {h.key === 'built_in_controller' ? (
+                        <>
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </>
+                      ) : (
+                        getUniqueValues(h.key as keyof Actuator).map(option => (
+                          <option key={option?.toString()} value={option?.toString()}>
+                            {option?.toString()}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Filter..."
+                      value={val}
+                      onChange={(e) =>
+                        setFilters({ ...filters, [h.key]: e.target.value })
+                      }
+                      style={filterInputStyle}
+                    />
+                  )}
                 </td>
-              )
-            )}
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -133,7 +218,6 @@ export default function ActuatorTable() {
             >
               {headers.map((h) => {
                 let value = (a as any)[h.key];
-
                 if (h.key === 'built_in_controller') {
                   value = value === true ? 'Yes' : value === false ? 'No' : '-';
                 } else if (h.key === 'link') {
@@ -141,7 +225,6 @@ export default function ActuatorTable() {
                 } else {
                   value = value ?? '-';
                 }
-
                 return <td key={h.key} style={tdStyle}>{value}</td>;
               })}
             </tr>
