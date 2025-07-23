@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link } from 'react-router-dom';
 import { useState } from 'react';
 import ActuatorTable from './components/ActuatorTable';
 import ActuatorDetail from './components/ActuatorDetail';
@@ -16,8 +16,30 @@ export default function App() {
     navigate('/'); // redirect to main page after login
   }
 
+  // Logout handler
+  function handleLogout() {
+    setUser(null);
+    navigate('/login');
+  }
+
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ padding: '2rem', color: 'white' }}>
+      {/* Simple top nav bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <Link to="/" style={{ color: 'skyblue', fontWeight: 'bold' }}>Actuator Database</Link>
+        <div>
+          {user ? (
+            <>
+              <span style={{ marginRight: '1rem' }}>Logged in as: {user.username}</span>
+              <button onClick={handleLogout} style={buttonStyle}>Logout</button>
+            </>
+          ) : (
+            <Link to="/login" style={buttonStyle}>Login</Link>
+          )}
+        </div>
+      </div>
+
+      {/* Page routes */}
       <Routes>
         <Route path="/" element={<ActuatorTable isAdmin={isAdmin} />} />
         <Route path="/actuator/:id" element={<ActuatorDetail isAdmin={isAdmin} />} />
@@ -38,3 +60,13 @@ export default function App() {
     </div>
   );
 }
+
+const buttonStyle: React.CSSProperties = {
+  padding: '0.4rem 0.8rem',
+  backgroundColor: '#2563eb',
+  color: 'white',
+  border: 'none',
+  borderRadius: 4,
+  textDecoration: 'none',
+  cursor: 'pointer',
+};
