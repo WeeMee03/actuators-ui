@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import type { Actuator } from '../types';
 
-export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
+export default function ActuatorTable({
+  isAdmin,
+  selected,
+  setSelected,
+}: {
+  isAdmin: boolean;
+  selected: Actuator[];
+  setSelected: (a: Actuator[]) => void;
+}) {
   const [actuators, setActuators] = useState<Actuator[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -20,6 +28,13 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
     }
     fetchActuators();
   }, []);
+
+  const toggleSelect = (actuator: Actuator) => {
+    const isSelected = selected.some((a) => a.id === actuator.id);
+    setSelected(
+      isSelected ? selected.filter((a) => a.id !== actuator.id) : [...selected, actuator]
+    );
+  };
 
   const matchesFilter = (value: any, filter: string) => {
     if (!filter) return true;
@@ -62,18 +77,37 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
   if (loading) return <p>Loading actuators...</p>;
 
   return (
-    <div style={{ padding: 24, overflowX: 'auto', background: '#1f1f1f', borderRadius: 12 }}>
+    <div
+      style={{
+        padding: 24,
+        overflowX: 'auto',
+        background: '#0f172a',
+        borderRadius: 12,
+        boxShadow: '0 0 12px rgba(0, 0, 0, 0.3)',
+      }}
+    >
       {isAdmin && (
         <button
           onClick={() => navigate('/add-actuator')}
-          style={{ marginBottom: '1rem', padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', borderRadius: 6, border: 'none' }}
+          style={{
+            marginBottom: '1rem',
+            padding: '10px 20px',
+            backgroundColor: '#2563eb',
+            color: 'white',
+            borderRadius: 6,
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+          }}
         >
           + Add Actuator
         </button>
       )}
+
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
+            <th style={thStyle}>Compare</th>
             {headers.map(({ label, key }) => (
               <th
                 key={key}
@@ -92,6 +126,7 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
             ))}
           </tr>
           <tr>
+            <td style={tdStyle}></td>
             {headers.map(({ key }) => (
               <td key={key} style={tdStyle}>
                 {key === 'built_in_controller' ? (
@@ -122,8 +157,24 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
             <tr
               key={a.id}
               onClick={() => navigate(`/actuator/${a.id}`)}
-              style={{ backgroundColor: i % 2 === 0 ? '#2a2a2a' : '#1e1e1e', cursor: 'pointer' }}
+              style={{
+                backgroundColor: i % 2 === 0 ? '#1e293b' : '#0f172a',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#334155')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#1e293b' : '#0f172a')}
             >
+              <td
+                style={tdStyle}
+                onClick={(e) => e.stopPropagation()} // prevent row navigation
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.some((x) => x.id === a.id)}
+                  onChange={() => toggleSelect(a)}
+                />
+              </td>
               {headers.map(({ key }) => {
                 const val = (a as any)[key];
                 return (
@@ -135,7 +186,16 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
                         ? 'No'
                         : '-'
                       : key === 'link' && val
-                      ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6' }}>Link</a>
+                      ? (
+                        <a
+                          href={val}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#3b82f6', textDecoration: 'underline' }}
+                        >
+                          Link
+                        </a>
+                      )
                       : val ?? '-'}
                   </td>
                 );
@@ -149,25 +209,33 @@ export default function ActuatorTable({ isAdmin }: { isAdmin: boolean }) {
 }
 
 const thStyle: React.CSSProperties = {
-  padding: '10px',
-  color: 'white',
-  backgroundColor: '#111',
-  border: '1px solid #444',
+  padding: '12px 16px',
+  color: '#f9fafb',
+  backgroundColor: '#0f172a',
+  borderBottom: '2px solid #334155',
+  textAlign: 'left',
+  fontWeight: 600,
+  fontSize: '0.875rem',
   whiteSpace: 'nowrap',
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: '10px',
-  color: 'white',
-  border: '1px solid #444',
+  padding: '12px 16px',
+  color: '#e2e8f0',
+  borderBottom: '1px solid #334155',
+  fontSize: '0.875rem',
   whiteSpace: 'nowrap',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '6px',
-  backgroundColor: '#292929',
-  color: 'white',
-  border: '1px solid #555',
+  padding: '6px 8px',
+  backgroundColor: '#1e293b',
+  color: '#f1f5f9',
+  border: '1px solid #475569',
   borderRadius: 4,
+  fontSize: '0.75rem',
 };
