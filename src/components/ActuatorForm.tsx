@@ -45,7 +45,7 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     'dc_voltage_v',
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = React.useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -59,7 +59,7 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     } else {
       navigate('/');
     }
-  };
+  }, [form, navigate]);
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', color: 'white', padding: '2rem' }}>

@@ -29,12 +29,12 @@ export default function ActuatorTable({
     fetchActuators();
   }, []);
 
-  const toggleSelect = (actuator: Actuator) => {
+  const toggleSelect = React.useCallback((actuator: Actuator) => {
     const isSelected = selected.some((a) => a.id === actuator.id);
     setSelected(
       isSelected ? selected.filter((a) => a.id !== actuator.id) : [...selected, actuator]
     );
-  };
+  }, [selected, setSelected]);
 
   const matchesFilter = (value: any, filter: string) => {
     if (!filter) return true;
@@ -59,20 +59,22 @@ export default function ActuatorTable({
     { label: 'Link', key: 'link' },
   ];
 
-  const filteredActuators = [...actuators]
-    .filter((a) =>
-      headers.every(({ key }) => matchesFilter((a as any)[key], filters[key] ?? ''))
-    )
-    .sort((a, b) => {
-      const valA = (a as any)[sortKey];
-      const valB = (b as any)[sortKey];
-      if (valA == null) return sortAsc ? -1 : 1;
-      if (valB == null) return sortAsc ? 1 : -1;
-      if (typeof valA === 'number' && typeof valB === 'number') {
-        return sortAsc ? valA - valB : valB - valA;
-      }
-      return sortAsc ? valA.toString().localeCompare(valB.toString()) : valB.toString().localeCompare(valA.toString());
-    });
+  const filteredActuators = React.useMemo(() => {
+    return [...actuators]
+      .filter((a) =>
+        headers.every(({ key }) => matchesFilter((a as any)[key], filters[key] ?? ''))
+      )
+      .sort((a, b) => {
+        const valA = (a as any)[sortKey];
+        const valB = (b as any)[sortKey];
+        if (valA == null) return sortAsc ? -1 : 1;
+        if (valB == null) return sortAsc ? 1 : -1;
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return sortAsc ? valA - valB : valB - valA;
+        }
+        return sortAsc ? valA.toString().localeCompare(valB.toString()) : valB.toString().localeCompare(valA.toString());
+      });
+  }, [actuators, headers, filters, sortKey, sortAsc]);
 
   if (loading) return <p>Loading actuators...</p>;
 

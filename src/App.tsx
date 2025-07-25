@@ -10,15 +10,15 @@ export default function App() {
   const isAdmin = user?.is_admin ?? false;
   const navigate = useNavigate();
 
-  function handleLogin(userData: any) {
+  const handleLogin = React.useCallback((userData: any) => {
     setUser(userData);
     navigate('/'); // redirect to main page after login
-  }
+  }, [navigate]);
 
-  function handleLogout() {
+  const handleLogout = React.useCallback(() => {
     setUser(null);
     navigate('/login');
-  }
+  }, [navigate]);
 
   return (
     <div style={{ padding: '2rem', color: 'white' }}>

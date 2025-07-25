@@ -21,7 +21,7 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
     'efficiency',
     'weight_kg',
     'dc_voltage_v',
-    'peak_torque_density_after_gear_nm_per_kg', // corrected field name
+    'peak_torque_density_after_gear_nm_per_kg',
   ];
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -50,13 +50,13 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
   if (loading) return <p>Loading actuator...</p>;
   if (!actuator) return <p>Actuator not found.</p>;
 
-  const handleChange = (key: string, value: any) => {
+  const handleChange = React.useCallback((key: string, value: any) => {
     setForm((f) => ({
       ...f,
       [key]: numberFields.includes(key) ? (value === '' ? null : Number(value)) : value,
     }));
     setSuccess('');
-  };
+  }, [numberFields]);
 
   const handleSave = async () => {
     setSaving(true);

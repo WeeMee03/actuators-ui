@@ -6,7 +6,7 @@ export default function LoginPage({ onLogin }: { onLogin: (user: any) => void })
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = async () => {
+  const handleLogin = React.useCallback(async () => {
     setError('');
     const { data, error } = await supabase
       .from('users')
@@ -20,7 +20,7 @@ export default function LoginPage({ onLogin }: { onLogin: (user: any) => void })
     } else {
       onLogin(data);
     }
-  };
+  }, [username, password, onLogin]);
 
   return (
     <div style={{ maxWidth: 320, margin: '2rem auto', color: 'white' }}>
