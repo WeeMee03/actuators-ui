@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import type { Actuator } from '../types';
@@ -27,28 +27,35 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const [success, setSuccess] = useState('');
 
-  useEffect(() => {
-    async function fetchActuator() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('actuators')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) {
-        console.error(error);
-        setActuator(null);
-      } else {
-        setActuator(data);
-        setForm(data);
-      }
+useEffect(() => {
+  async function fetchActuator() {
+    setLoading(true);
+    // Validate id
+    if (!id) {
+      console.error('Invalid actuator ID:', id);
+      setActuator(null);
       setLoading(false);
+      return;
     }
-    if (id) fetchActuator();
-  }, [id]);
-
-  if (loading) return <p>Loading actuator...</p>;
-  if (!actuator) return <p>Actuator not found.</p>;
+    const { data, error } = await supabase
+      .from('actuators')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) {
+      console.error('Supabase error:', error, 'ID:', id);
+      setActuator(null);
+    } else if (!data) {
+      console.warn('No actuator found for ID:', id);
+      setActuator(null);
+    } else {
+      setActuator(data);
+      setForm(data);
+    }
+    setLoading(false);
+  }
+  fetchActuator();
+}, [id]);
 
   const handleChange = React.useCallback((key: string, value: any) => {
     setForm((f) => ({
@@ -58,10 +65,23 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
     setSuccess('');
   }, [numberFields]);
 
+  if (loading || !actuator) {
+    return (
+      <div style={{ padding: '2rem', maxWidth: 600, margin: '0 auto', color: 'white' }}>
+        <button onClick={() => navigate(-1)} style={backButtonStyle}>
+          ← Back
+        </button>
+        <h2>
+          {loading ? 'Loading actuator...' : 'Actuator not found.'}
+        </h2>
+      </div>
+    );
+  }
+
   const handleSave = async () => {
     setSaving(true);
     setSuccess('');
-    const { error } = await supabase.from('actuators').update(form).eq('id', id);
+    const { error } = await supabase.from('actuators').update(form).eq('id', Number(id));
     setSaving(false);
     if (error) {
       alert('Failed to update actuator.');
@@ -76,7 +96,7 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this actuator?')) return;
     setDeleting(true);
-    const { error } = await supabase.from('actuators').delete().eq('id', id);
+    const { error } = await supabase.from('actuators').delete().eq('id', Number(id));
     setDeleting(false);
     if (error) {
       alert('Failed to delete actuator.');

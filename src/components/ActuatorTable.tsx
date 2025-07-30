@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import type { Actuator } from '../types';
@@ -21,7 +21,11 @@ export default function ActuatorTable({
 
   useEffect(() => {
     async function fetchActuators() {
-      const { data, error } = await supabase.from('actuators').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('actuators')
+        .select('*')
+        .order('created_at', { ascending: false });
+
       if (error) console.error('Error:', error);
       setActuators(data ?? []);
       setLoading(false);
@@ -29,15 +33,24 @@ export default function ActuatorTable({
     fetchActuators();
   }, []);
 
-  const toggleSelect = React.useCallback((actuator: Actuator) => {
-    const isSelected = selected.some((a) => a.id === actuator.id);
-    setSelected(
-      isSelected ? selected.filter((a) => a.id !== actuator.id) : [...selected, actuator]
-    );
-  }, [selected, setSelected]);
+  const toggleSelect = React.useCallback(
+    (actuator: Actuator) => {
+      const isSelected = selected.some((a) => a.id === actuator.id);
+      setSelected(
+        isSelected ? selected.filter((a) => a.id !== actuator.id) : [...selected, actuator]
+      );
+    },
+    [selected, setSelected]
+  );
 
-  const matchesFilter = (value: any, filter: string) => {
+  const matchesFilter = (value: any, filter: string, key?: string) => {
     if (!filter) return true;
+    // Special handling for boolean field
+    if (key === 'built_in_controller') {
+      if (filter === 'true') return value === true;
+      if (filter === 'false') return value === false;
+      return true;
+    }
     return value?.toString().toLowerCase().includes(filter.toLowerCase());
   };
 
@@ -62,7 +75,7 @@ export default function ActuatorTable({
   const filteredActuators = React.useMemo(() => {
     return [...actuators]
       .filter((a) =>
-        headers.every(({ key }) => matchesFilter((a as any)[key], filters[key] ?? ''))
+        headers.every(({ key }) => matchesFilter((a as any)[key], filters[key] ?? '', key))
       )
       .sort((a, b) => {
         const valA = (a as any)[sortKey];
@@ -72,7 +85,9 @@ export default function ActuatorTable({
         if (typeof valA === 'number' && typeof valB === 'number') {
           return sortAsc ? valA - valB : valB - valA;
         }
-        return sortAsc ? valA.toString().localeCompare(valB.toString()) : valB.toString().localeCompare(valA.toString());
+        return sortAsc
+          ? valA.toString().localeCompare(valB.toString())
+          : valB.toString().localeCompare(valA.toString());
       });
   }, [actuators, headers, filters, sortKey, sortAsc]);
 
@@ -129,19 +144,54 @@ export default function ActuatorTable({
           </tr>
           <tr>
             <td style={tdStyle}></td>
-            {headers.map(({ key }) => (
-              <td key={key} style={tdStyle}>
-                {key === 'built_in_controller' ? (
-                  <select
-                    value={filters[key] ?? ''}
-                    onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
-                    style={inputStyle}
-                  >
-                    <option value="">All</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                ) : (
+            {headers.map(({ key }) => {
+              const firstValue = (actuators[0] as any)?.[key];
+              const isStringField =
+                typeof firstValue === 'string' &&
+                key !== 'model_type' &&
+                key !== 'link';
+
+              // For boolean fields, filter by true/false/null
+              if (key === 'built_in_controller') {
+                return (
+                  <td key={key} style={tdStyle}>
+                    <select
+                      value={filters[key] ?? ''}
+                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                      style={inputStyle}
+                    >
+                      <option value="">All</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </td>
+                );
+              }
+
+              // For string fields, show unique options
+              if (isStringField) {
+                const uniqueVals = Array.from(new Set(actuators.map((a) => (a as any)[key] ?? ''))).filter(Boolean);
+                return (
+                  <td key={key} style={tdStyle}>
+                    <select
+                      value={filters[key] ?? ''}
+                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                      style={inputStyle}
+                    >
+                      <option value="">All</option>
+                      {uniqueVals.map((val) => (
+                        <option key={val} value={val}>
+                          {val}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                );
+              }
+
+              // Default: text input
+              return (
+                <td key={key} style={tdStyle}>
                   <input
                     type="text"
                     placeholder="Filter..."
@@ -149,9 +199,9 @@ export default function ActuatorTable({
                     onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
                     style={inputStyle}
                   />
-                )}
-              </td>
-            ))}
+                </td>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -165,12 +215,11 @@ export default function ActuatorTable({
                 transition: 'background-color 0.2s',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#334155')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#1e293b' : '#0f172a')}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#1e293b' : '#0f172a')
+              }
             >
-              <td
-                style={tdStyle}
-                onClick={(e) => e.stopPropagation()} // prevent row navigation
-              >
+              <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selected.some((x) => x.id === a.id)}
@@ -187,8 +236,7 @@ export default function ActuatorTable({
                         : val === false
                         ? 'No'
                         : '-'
-                      : key === 'link' && val
-                      ? (
+                      : key === 'link' && val ? (
                         <a
                           href={val}
                           target="_blank"
@@ -197,8 +245,9 @@ export default function ActuatorTable({
                         >
                           Link
                         </a>
-                      )
-                      : val ?? '-'}
+                      ) : (
+                        val ?? '-'
+                      )}
                   </td>
                 );
               })}

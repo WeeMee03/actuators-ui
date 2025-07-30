@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import type { Actuator } from '../types';
 import {
   RadarChart,
@@ -104,15 +103,42 @@ export default function ComparePage({
   }, [setSelected]);
 
   const barField = useMemo(() => fields.find((f) => f.key === barChartField), [fields, barChartField]);
-  const radarData = useMemo(() => radarFields.map((key) => {
-    const f = numericFields.find((f) => f.key === key);
-    const entry: { [key: string]: number | string } = { metric: f?.label || key };
-    actuators.forEach((a) => {
-      const val = f?.get(a);
-      if (typeof val === 'number') entry[a.model_type] = val;
+
+  // --- NEW: Calculate min/max per radar field for normalization ---
+  const minMaxPerRadarField = useMemo(() => {
+    const result: Record<string, { min: number; max: number }> = {};
+    radarFields.forEach((key) => {
+      const f = numericFields.find((nf) => nf.key === key);
+      if (!f) return;
+      const values = actuators
+        .map((a) => {
+          const v = f.get(a);
+          return typeof v === 'number' ? v : null;
+        })
+        .filter((v): v is number => v !== null);
+      result[key] = {
+        min: values.length ? Math.min(...values) : 0,
+        max: values.length ? Math.max(...values) : 0,
+      };
     });
-    return entry;
-  }), [radarFields, numericFields, actuators]);
+    return result;
+  }, [radarFields, numericFields, actuators]);
+
+  const radarData = useMemo(() => {
+    return radarFields.map((key) => {
+      const f = numericFields.find((nf) => nf.key === key);
+      if (!f) return null;
+      const dataPoint: Record<string, number | string> = { metric: f.label };
+      const { min, max } = minMaxPerRadarField[key] ?? { min: 0, max: 0 };
+      actuators.forEach((a) => {
+        const val = f.get(a);
+        if (typeof val === 'number') {
+          dataPoint[a.model_type] = max !== min ? (val - min) / (max - min) : 1;
+        }
+      });
+      return dataPoint;
+    }).filter((d): d is Record<string, number | string> => d !== null);
+  }, [radarFields, numericFields, actuators, minMaxPerRadarField]);
 
   const barData = useMemo(() => actuators.map((a) => ({
     name: a.model_type,

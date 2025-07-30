@@ -1,18 +1,18 @@
+import React, { useState } from 'react';
 import { Routes, Route, useNavigate, Link, Navigate } from 'react-router-dom';
-import { useState } from 'react';
-import CompareTabView from './components/CompareTabView'; // import tabbed view component
+import CompareTabView from './components/CompareTabView';
 import ActuatorDetail from './components/ActuatorDetail';
 import ActuatorForm from './components/ActuatorForm';
 import LoginPage from './components/LoginPage';
 
 export default function App() {
-  const [user, setUser] = useState<any>(null); // {username, is_admin, ...}
+  const [user, setUser] = useState<any>(null);
   const isAdmin = user?.is_admin ?? false;
   const navigate = useNavigate();
 
   const handleLogin = React.useCallback((userData: any) => {
     setUser(userData);
-    navigate('/'); // redirect to main page after login
+    navigate('/');
   }, [navigate]);
 
   const handleLogout = React.useCallback(() => {

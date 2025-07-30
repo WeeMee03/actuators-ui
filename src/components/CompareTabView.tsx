@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import ActuatorTable from './ActuatorTable';
 import ComparePage from './ComparePage';
 import type { Actuator } from '../types';
