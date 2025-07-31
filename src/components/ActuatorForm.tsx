@@ -1,13 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { create, all } from 'mathjs';
 import type { Actuator } from '../types';
+
+const math = create(all, {});
 
 export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
   const navigate = useNavigate();
   const [form, setForm] = useState<Partial<Actuator>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formulas, setFormulas] = useState<{ field_name: string; formula: string }[]>([]);
+
+  const numberFields = [
+    'overall_diameter_mm',
+    'overall_length_mm',
+    'gear_ratio',
+    'rated_torque_nm',
+    'peak_torque_nm',
+    'rated_speed_rpm',
+    'efficiency',
+    'weight_kg',
+    'dc_voltage_v',
+  ];
+
+  // 🧩 Fetch formulas from Supabase
+  useEffect(() => {
+    const fetchFormulas = async () => {
+      const { data, error } = await supabase
+        .from('formulas')
+        .select('field_name, formula')
+        .eq('is_active', true);
+
+      if (data) setFormulas(data);
+      if (error) console.error('Failed to fetch formulas:', error.message);
+    };
+
+    fetchFormulas();
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -33,33 +64,67 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     { label: 'Link', key: 'link' },
   ];
 
-  const numberFields = [
-    'overall_diameter_mm',
-    'overall_length_mm',
-    'gear_ratio',
-    'rated_torque_nm',
-    'peak_torque_nm',
-    'rated_speed_rpm',
-    'efficiency',
-    'weight_kg',
-    'dc_voltage_v',
-  ];
+  // 📦 Evaluate formulas just before submit
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      setError(null);
 
-  const handleSubmit = React.useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+      // Prepare context for mathjs evaluation - make sure number fields are numbers or zero
+      const context: Record<string, any> = {};
+      Object.entries(form).forEach(([k, v]) => {
+        if (numberFields.includes(k)) {
+          context[k] = typeof v === 'number' && !isNaN(v) ? v : 0;
+        } else {
+          context[k] = v;
+        }
+      });
 
-    const { error } = await supabase.from('actuators').insert([form]);
-    setLoading(false);
+      const derivedValues: Record<string, number> = {};
 
-    if (error) {
-      setError('Failed to insert actuator.');
-      console.error(error);
-    } else {
-      navigate('/');
-    }
-  }, [form, navigate]);
+      for (const { field_name, formula } of formulas) {
+        try {
+          const value = math.evaluate(formula, context);
+          if (!isNaN(value)) {
+            derivedValues[field_name] = Number(value.toFixed(6));
+            context[field_name] = derivedValues[field_name]; // keep for formulas depending on other formulas
+          }
+        } catch (err) {
+          console.warn(`Error evaluating formula for ${field_name}:`, err);
+        }
+      }
+
+      const finalData = { ...form, ...derivedValues };
+
+      // Clean finalData: convert empty strings to null for non-required fields and normalize number fields
+      const cleanedData = Object.fromEntries(
+        Object.entries(finalData).map(([k, v]) => {
+          if (numberFields.includes(k)) {
+            if (v === '' || v === null || v === undefined || isNaN(Number(v))) {
+              return [k, null];
+            }
+            return [k, Number(v)];
+          } else if (typeof v === 'string' && v.trim() === '') {
+            return [k, null];
+          }
+          return [k, v];
+        })
+      );
+
+      const { error } = await supabase.from('actuators').insert([cleanedData]);
+      setLoading(false);
+
+      if (error) {
+        setError('Failed to insert actuator.');
+        console.error('Supabase insert error:', error);
+        alert(`Insert failed: ${error.message}`);
+      } else {
+        navigate('/');
+      }
+    },
+    [form, formulas, navigate, numberFields]
+  );
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', color: 'white', padding: '2rem' }}>
@@ -71,11 +136,7 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
             {key === 'built_in_controller' ? (
               <select
                 value={
-                  form[key] === true
-                    ? 'true'
-                    : form[key] === false
-                    ? 'false'
-                    : ''
+                  form[key] === true ? 'true' : form[key] === false ? 'false' : ''
                 }
                 onChange={(e) =>
                   setForm({

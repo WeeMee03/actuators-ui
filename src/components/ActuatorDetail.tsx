@@ -10,6 +10,7 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<Partial<Actuator>>({});
+  const [formulas, setFormulas] = useState<{ field_name: string; formula: string }[]>([]);
 
   const numberFields = [
     'overall_diameter_mm',
@@ -27,43 +28,62 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const [success, setSuccess] = useState('');
 
-useEffect(() => {
-  async function fetchActuator() {
-    setLoading(true);
-    // Validate id
-    if (!id) {
-      console.error('Invalid actuator ID:', id);
-      setActuator(null);
+  // Fetch actuator data
+  useEffect(() => {
+    async function fetchActuator() {
+      setLoading(true);
+      if (!id) {
+        console.error('Invalid actuator ID:', id);
+        setActuator(null);
+        setLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('actuators')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (error) {
+        console.error('Supabase error:', error, 'ID:', id);
+        setActuator(null);
+      } else if (!data) {
+        console.warn('No actuator found for ID:', id);
+        setActuator(null);
+      } else {
+        setActuator(data);
+        setForm(data);
+      }
       setLoading(false);
-      return;
     }
-    const { data, error } = await supabase
-      .from('actuators')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (error) {
-      console.error('Supabase error:', error, 'ID:', id);
-      setActuator(null);
-    } else if (!data) {
-      console.warn('No actuator found for ID:', id);
-      setActuator(null);
-    } else {
-      setActuator(data);
-      setForm(data);
-    }
-    setLoading(false);
-  }
-  fetchActuator();
-}, [id]);
+    fetchActuator();
+  }, [id]);
 
-  const handleChange = React.useCallback((key: string, value: any) => {
-    setForm((f) => ({
-      ...f,
-      [key]: numberFields.includes(key) ? (value === '' ? null : Number(value)) : value,
-    }));
-    setSuccess('');
-  }, [numberFields]);
+  // Fetch formulas for legend
+  useEffect(() => {
+    async function fetchFormulas() {
+      const { data, error } = await supabase
+        .from('formulas')
+        .select('field_name, formula')
+        .eq('is_active', true);
+      if (error) {
+        console.error('Failed to fetch formulas:', error.message);
+      } else if (data) {
+        setFormulas(data);
+      }
+    }
+    fetchFormulas();
+  }, []);
+
+  const handleChange = React.useCallback(
+    (key: string, value: any) => {
+      setForm((f) => ({
+        ...f,
+        [key]: numberFields.includes(key) ? (value === '' ? null : Number(value)) : value,
+      }));
+      setSuccess('');
+    },
+    [numberFields]
+  );
 
   if (loading || !actuator) {
     return (
@@ -71,9 +91,7 @@ useEffect(() => {
         <button onClick={() => navigate(-1)} style={backButtonStyle}>
           ← Back
         </button>
-        <h2>
-          {loading ? 'Loading actuator...' : 'Actuator not found.'}
-        </h2>
+        <h2>{loading ? 'Loading actuator...' : 'Actuator not found.'}</h2>
       </div>
     );
   }
@@ -81,7 +99,7 @@ useEffect(() => {
   const handleSave = async () => {
     setSaving(true);
     setSuccess('');
-    const { error } = await supabase.from('actuators').update(form).eq('id', Number(id));
+    const { error } = await supabase.from('actuators').update(form).eq('id', id);
     setSaving(false);
     if (error) {
       alert('Failed to update actuator.');
@@ -96,7 +114,7 @@ useEffect(() => {
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this actuator?')) return;
     setDeleting(true);
-    const { error } = await supabase.from('actuators').delete().eq('id', Number(id));
+    const { error } = await supabase.from('actuators').delete().eq('id', id);
     setDeleting(false);
     if (error) {
       alert('Failed to delete actuator.');
@@ -107,7 +125,16 @@ useEffect(() => {
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: 600, margin: '0 auto', color: 'white' }}>
+    <div
+      style={{
+        padding: '2rem 3vw',
+        maxWidth: '100%',
+        margin: '0 auto',
+        color: 'white',
+        boxSizing: 'border-box',
+        minWidth: 0,
+      }}
+    >
       <button onClick={() => navigate(-1)} style={backButtonStyle}>
         ← Back
       </button>
@@ -115,83 +142,131 @@ useEffect(() => {
         {actuator.manufacturer ?? 'Unknown'} - {actuator.model_type}
       </h2>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', background: '#222', color: 'white' }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: 'left', padding: 8, background: '#333' }}>Field</th>
-            <th style={{ textAlign: 'left', padding: 8, background: '#333' }}>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(editMode ? form : actuator)
-            .filter(([key]) => key !== 'id' && key !== 'created_at')
-            .map(([key, value]) => (
-              <tr key={key}>
-                <td style={{ fontWeight: 'bold', padding: 8, borderBottom: '1px solid #444' }}>{formatKey(key)}</td>
-                <td style={{ padding: 8, borderBottom: '1px solid #444' }}>
-                  {editMode ? (
-                    numberFields.includes(key) ? (
-                      <input
-                        type="number"
-                        value={typeof value === 'boolean' ? (value ? '1' : '0') : value ?? ''}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        style={inputStyle}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={typeof value === 'boolean' ? String(value) : value ?? ''}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        style={inputStyle}
-                      />
-                    )
-                  ) : (
-                    value === true
-                      ? 'Yes'
-                      : value === false
-                      ? 'No'
-                      : value === null || value === undefined
-                      ? '-'
-                      : value
-                  )}
-                </td>
+      {/* Flex container */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '2rem',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}
+      >
+        {/* Left: details table */}
+        <div style={{ flex: '1 1 600px', minWidth: 0 }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              background: '#222',
+              color: 'white',
+            }}
+          >
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: 8, background: '#333' }}>Field</th>
+                <th style={{ textAlign: 'left', padding: 8, background: '#333' }}>Value</th>
               </tr>
-            ))}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {Object.entries(editMode ? form : actuator)
+                .filter(([key]) => key !== 'id' && key !== 'created_at')
+                .map(([key, value]) => (
+                  <tr key={key}>
+                    <td style={{ fontWeight: 'bold', padding: 8, borderBottom: '1px solid #444' }}>
+                      {formatKey(key)}
+                    </td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #444' }}>
+                      {editMode ? (
+                        numberFields.includes(key) ? (
+                          <input
+                            type="number"
+                            value={typeof value === 'boolean' ? (value ? '1' : '0') : value ?? ''}
+                            onChange={(e) => handleChange(key, e.target.value)}
+                            style={inputStyle}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={typeof value === 'boolean' ? String(value) : value ?? ''}
+                            onChange={(e) => handleChange(key, e.target.value)}
+                            style={inputStyle}
+                          />
+                        )
+                      ) : value === true ? (
+                        'Yes'
+                      ) : value === false ? (
+                        'No'
+                      ) : value === null || value === undefined ? (
+                        '-'
+                      ) : (
+                        value
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
 
-      <div style={{ marginTop: '1rem' }}>
-        {success && <p style={{ color: '#22c55e', fontWeight: 'bold' }}>{success}</p>}
-        {editMode ? (
-          <>
-            <button onClick={handleSave} style={saveButtonStyle} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button onClick={() => setEditMode(false)} style={cancelButtonStyle} disabled={saving}>
-              Cancel
-            </button>
-          </>
-        ) : isAdmin ? (
-          <>
-            <button onClick={() => setEditMode(true)} style={editButtonStyle}>
-              Edit
-            </button>
-            <button onClick={handleDelete} style={deleteButtonStyle} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
-            </button>
-          </>
-        ) : (
-          <p style={{ fontStyle: 'italic', color: 'gray' }}>Read-only access</p>
-        )}
+          <div style={{ marginTop: '1rem' }}>
+            {success && <p style={{ color: '#22c55e', fontWeight: 'bold' }}>{success}</p>}
+            {editMode ? (
+              <>
+                <button onClick={handleSave} style={saveButtonStyle} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button onClick={() => setEditMode(false)} style={cancelButtonStyle} disabled={saving}>
+                  Cancel
+                </button>
+              </>
+            ) : isAdmin ? (
+              <>
+                <button onClick={() => setEditMode(true)} style={editButtonStyle}>
+                  Edit
+                </button>
+                <button onClick={handleDelete} style={deleteButtonStyle} disabled={deleting}>
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </>
+            ) : (
+              <p style={{ fontStyle: 'italic', color: 'gray' }}>Read-only access</p>
+            )}
+          </div>
+        </div>
+
+        {/* Right: formula legend */}
+        <div
+          style={{
+            flex: '0 0 320px',
+            padding: '1rem',
+            backgroundColor: '#111',
+            borderRadius: 8,
+            maxHeight: 600,
+            overflowY: 'auto',
+            color: '#ddd',
+          }}
+        >
+          <h3 style={{ marginBottom: 12, borderBottom: '1px solid #333', paddingBottom: 6 }}>
+            Formula Legend
+          </h3>
+          {formulas.length === 0 ? (
+            <p>No active formulas found.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+              {formulas.map(({ field_name, formula }) => (
+                <li key={field_name} style={{ marginBottom: 8 }}>
+                  <code style={{ fontWeight: 'bold' }}>{formatKey(field_name)}</code>: <code>{formula}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 function formatKey(key: string) {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const backButtonStyle: React.CSSProperties = {
