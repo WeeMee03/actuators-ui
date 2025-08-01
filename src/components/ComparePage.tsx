@@ -90,6 +90,11 @@ export default function ComparePage({
   );
   const [barChartField, setBarChartField] = useState(numericFields[0]?.key || '');
 
+  // Weights state for scoring, keyed by numeric field keys
+  const [weights, setWeights] = useState<Record<string, number>>(() =>
+    Object.fromEntries(numericFields.map((f) => [f.key, 0]))
+  );
+
   const toggleField = useCallback((key: string) => {
     setVisibleFields((prev: string[]) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
   }, []);
@@ -104,7 +109,6 @@ export default function ComparePage({
 
   const barField = useMemo(() => fields.find((f) => f.key === barChartField), [fields, barChartField]);
 
-  // --- NEW: Calculate min/max per radar field for normalization ---
   const minMaxPerRadarField = useMemo(() => {
     const result: Record<string, { min: number; max: number }> = {};
     radarFields.forEach((key) => {
@@ -144,6 +148,47 @@ export default function ComparePage({
     name: a.model_type,
     value: typeof barField?.get(a) === 'number' ? (barField.get(a) as number) : 0,
   })), [actuators, barField]);
+
+  // Total weight sum for validation
+  const totalWeight = useMemo(
+    () => Object.values(weights).reduce((a, b) => a + b, 0),
+    [weights]
+  );
+
+  // Normalized scores per actuator per field (0-1 scale)
+  const getNormalizedScores = useMemo(() => {
+    const result: Record<string, number>[] = actuators.map(() => ({}));
+    numericFields.forEach((field) => {
+      const values = actuators.map((a) => {
+        const val = field.get(a);
+        return typeof val === 'number' ? val : null;
+      });
+      const min = Math.min(...values.filter((v): v is number => v !== null));
+      const max = Math.max(...values.filter((v): v is number => v !== null));
+
+      actuators.forEach((a, idx) => {
+        const val = field.get(a);
+        if (typeof val === 'number') {
+          result[idx][field.key] = max !== min ? (val - min) / (max - min) : 1;
+        } else {
+          result[idx][field.key] = 0;
+        }
+      });
+    });
+    return result;
+  }, [actuators, numericFields]);
+
+  // Compute total score out of 100 based on weights and normalized values
+  const scores = useMemo(() => {
+    return getNormalizedScores.map((scoreMap) => {
+      let total = 0;
+      numericFields.forEach((f) => {
+        const weight = weights[f.key] || 0;
+        total += (scoreMap[f.key] || 0) * weight;
+      });
+      return Math.round(total);
+    });
+  }, [getNormalizedScores, weights, numericFields]);
 
   if (actuators.length === 0) {
     return <p style={{ color: '#f1f5f9' }}>No actuators selected. Please select from the table first.</p>;
@@ -332,9 +377,37 @@ export default function ComparePage({
                   const max = highlight ? Math.max(...numericValues) : null;
                   const min = highlight ? Math.min(...numericValues) : null;
 
+                  const isNumericField = numericFields.some((nf) => nf.key === key);
+
                   return (
                     <tr key={key}>
-                      <td style={tdLabelStyle}><strong>{label}</strong></td>
+                      <td style={tdLabelStyle}>
+                        <strong>{label}</strong>
+                        {isNumericField && (
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={weights[key] === 0 ? '' : weights[key]}
+                            onChange={(e) => {
+                              const newVal = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                              setWeights((prev) => ({ ...prev, [key]: newVal }));
+                            }}
+                            style={{
+                              marginLeft: '0.5rem',
+                              width: 60,
+                              fontSize: '0.85rem',
+                              padding: '2px 4px',
+                              borderRadius: 4,
+                              border: '1px solid #475569',
+                              backgroundColor: '#1e293b',
+                              color: '#f1f5f9',
+                              textAlign: 'center',
+                            }}
+                            title="Weight (0-100)"
+                          />
+                        )}
+                      </td>
                       {actuators.map((a) => {
                         const value = get(a);
                         const isNumber = typeof value === 'number';
@@ -352,8 +425,25 @@ export default function ComparePage({
                     </tr>
                   );
                 })}
+              {/* Score row */}
+              <tr>
+                <td style={{ ...tdLabelStyle, fontWeight: 'bold', backgroundColor: '#1e293b' }}>
+                  Score (/100)
+                </td>
+                {actuators.map((a, idx) => (
+                  <td key={a.id + '_score'} style={{ ...tdStyle, fontWeight: 'bold', color: '#38bdf8' }}>
+                    {totalWeight === 100 ? scores[idx] : '-'}
+                  </td>
+                ))}
+              </tr>
             </tbody>
           </table>
+
+          {totalWeight !== 100 && (
+            <p style={{ color: '#ef4444', marginTop: '0.5rem' }}>
+              The total weight must equal 100 to calculate scores. Current total: {totalWeight}
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -69,7 +69,6 @@ export default function ActuatorTable({
     { label: 'DC Voltage (V)', key: 'dc_voltage_v' },
     { label: 'Peak Torque Density (Nm/kg)', key: 'peak_torque_density_after_gear_nm_per_kg' },
     { label: 'Built-in Controller', key: 'built_in_controller' },
-    { label: 'Link', key: 'link' },
   ];
 
   const filteredActuators = React.useMemo(() => {
@@ -148,8 +147,7 @@ export default function ActuatorTable({
               const firstValue = (actuators[0] as any)?.[key];
               const isStringField =
                 typeof firstValue === 'string' &&
-                key !== 'model_type' &&
-                key !== 'link';
+                key !== 'model_type';
 
               // For boolean fields, filter by true/false/null
               if (key === 'built_in_controller') {
@@ -168,9 +166,10 @@ export default function ActuatorTable({
                 );
               }
 
-              // For string fields, show unique options
               if (isStringField) {
-                const uniqueVals = Array.from(new Set(actuators.map((a) => (a as any)[key] ?? ''))).filter(Boolean);
+                const uniqueVals = Array.from(
+                  new Set(actuators.map((a) => (a as any)[key] ?? ''))
+                ).filter(Boolean);
                 return (
                   <td key={key} style={tdStyle}>
                     <select
@@ -189,7 +188,6 @@ export default function ActuatorTable({
                 );
               }
 
-              // Default: text input
               return (
                 <td key={key} style={tdStyle}>
                   <input
@@ -236,18 +234,7 @@ export default function ActuatorTable({
                         : val === false
                         ? 'No'
                         : '-'
-                      : key === 'link' && val ? (
-                        <a
-                          href={val}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: '#3b82f6', textDecoration: 'underline' }}
-                        >
-                          Link
-                        </a>
-                      ) : (
-                        val ?? '-'
-                      )}
+                      : val ?? '-'}
                   </td>
                 );
               })}
