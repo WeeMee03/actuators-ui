@@ -3,7 +3,13 @@ import ActuatorTable from './ActuatorTable';
 import ComparePage from './ComparePage';
 import type { Actuator } from '../types';
 
-export default function CompareTabView({ isAdmin }: { isAdmin: boolean }) {
+export default function CompareTabView({
+  isAdmin,
+  loggedIn,
+}: {
+  isAdmin: boolean;
+  loggedIn: boolean;
+}) {
   const [selected, setSelected] = useState<Actuator[]>([]);
   const [tab, setTab] = useState<'table' | 'compare'>('table');
   const handleTabSwitch = React.useCallback((tab: 'table' | 'compare') => setTab(tab), []);
@@ -12,8 +18,8 @@ export default function CompareTabView({ isAdmin }: { isAdmin: boolean }) {
     <div style={{ padding: '1rem' }}>
       {/* Tabs */}
       <div style={{ display: 'flex', marginBottom: '1rem' }}>
-      <button
-        onClick={() => handleTabSwitch('table')}
+        <button
+          onClick={() => handleTabSwitch('table')}
           style={{
             padding: '10px 16px',
             marginRight: '0.5rem',
@@ -47,6 +53,7 @@ export default function CompareTabView({ isAdmin }: { isAdmin: boolean }) {
       <div style={{ display: tab === 'table' ? 'block' : 'none' }}>
         <ActuatorTable
           isAdmin={isAdmin}
+          loggedIn={loggedIn}
           selected={selected}
           setSelected={setSelected}
         />

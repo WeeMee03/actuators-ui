@@ -5,12 +5,12 @@ import type { Actuator } from '../types';
 
 export default function ActuatorTable({
   isAdmin,
-  isRestrictedViewer,
+  loggedIn,
   selected,
   setSelected,
 }: {
   isAdmin: boolean;
-  isRestrictedViewer?: boolean;
+  loggedIn: boolean;
   selected: Actuator[];
   setSelected: (a: Actuator[]) => void;
 }) {
@@ -78,22 +78,36 @@ export default function ActuatorTable({
     setVisibleOptionalFields([]);
   };
 
+  // Compute headers based on role
   const headers = useMemo(() => {
-    const baseHeaders = [
-      { label: 'Manufacturer', key: 'manufacturer' },
-      { label: 'Model Type', key: 'model_type' },
-      ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
-    ];
+    let baseHeaders: { label: string; key: string }[] = [];
 
-    if (isRestrictedViewer) {
-      return [
-        { label: 'ID', key: 'restricted_id' },
+    if (isAdmin) {
+      // ✅ Admin sees everything
+      baseHeaders = [
+        { label: 'Restricted ID', key: 'restricted_id' },
+        { label: 'Manufacturer', key: 'manufacturer' },
+        { label: 'Model Type', key: 'model_type' },
+        ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
+      ];
+    } else if (loggedIn) {
+      // ✅ Viewer (logged in, not admin)
+      baseHeaders = [
+        { label: 'Restricted ID', key: 'restricted_id' },
+        { label: 'Manufacturer', key: 'manufacturer' },
+        { label: 'Model Type', key: 'model_type' },
+        ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
+      ];
+    } else {
+      // ✅ Guest (not logged in) → no manufacturer/model type
+      baseHeaders = [
+        { label: 'Restricted ID', key: 'restricted_id' },
         ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
       ];
     }
 
     return baseHeaders;
-  }, [allOptionalHeaders, visibleOptionalFields, isRestrictedViewer]);
+  }, [allOptionalHeaders, visibleOptionalFields, isAdmin, loggedIn]);
 
   const toggleSelect = useCallback(
     (actuator: Actuator) => {
@@ -140,7 +154,6 @@ export default function ActuatorTable({
     return [...processed]
       .filter((a) =>
         headers.every(({ key }) => {
-          if (isRestrictedViewer && key === 'restricted_id') return true;
           const value = (a as any)[key];
           if (ranges[key]) return matchesRange(value, ranges[key]);
           return matchesFilter(value, filters[key] ?? '', key);
@@ -158,7 +171,7 @@ export default function ActuatorTable({
           ? valA.toString().localeCompare(valB.toString())
           : valB.toString().localeCompare(valA.toString());
       });
-  }, [actuators, headers, filters, ranges, sortKey, sortAsc, isRestrictedViewer]);
+  }, [actuators, headers, filters, ranges, sortKey, sortAsc]);
 
   if (loading) return <p>Loading actuators...</p>;
 
@@ -171,7 +184,8 @@ export default function ActuatorTable({
         boxShadow: '0 0 12px rgba(0, 0, 0, 0.3)',
       }}
     >
-      {isAdmin && !isRestrictedViewer && (
+      {/* ✅ Only Admins can add actuators */}
+      {isAdmin && (
         <button
           onClick={() => navigate('/add-actuator')}
           style={{
@@ -264,78 +278,76 @@ export default function ActuatorTable({
               const firstValue = (actuators[0] as any)?.[key];
 
               let filterElement: React.ReactNode = null;
-              if (!isRestrictedViewer || key !== 'restricted_id') {
-                if (key === 'built_in_controller') {
-                  filterElement = (
-                    <select
-                      value={filters[key] ?? ''}
-                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
-                      style={headerFilterSelectStyle}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <option value="">All</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  );
-                } else if (typeof firstValue === 'string' && key !== 'model_type') {
-                  const uniqueVals = Array.from(
-                    new Set(actuators.map((a) => (a as any)[key] ?? ''))
-                  ).filter(Boolean);
-                  filterElement = (
-                    <select
-                      value={filters[key] ?? ''}
-                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
-                      style={headerFilterSelectStyle}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <option value="">All</option>
-                      {uniqueVals.map((val) => (
-                        <option key={val} value={val}>
-                          {val}
-                        </option>
-                      ))}
-                    </select>
-                  );
-                } else if (typeof firstValue === 'number') {
-                  filterElement = (
-                    <div
-                      style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}
-                    >
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={ranges[key]?.min ?? ''}
-                        onChange={(e) =>
-                          setRanges({ ...ranges, [key]: { ...ranges[key], min: e.target.value } })
-                        }
-                        style={{ ...headerFilterInputStyle, width: 50 }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={ranges[key]?.max ?? ''}
-                        onChange={(e) =>
-                          setRanges({ ...ranges, [key]: { ...ranges[key], max: e.target.value } })
-                        }
-                        style={{ ...headerFilterInputStyle, width: 50 }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </div>
-                  );
-                } else {
-                  filterElement = (
+              if (key === 'built_in_controller') {
+                filterElement = (
+                  <select
+                    value={filters[key] ?? ''}
+                    onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                    style={headerFilterSelectStyle}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">All</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                );
+              } else if (typeof firstValue === 'string' && key !== 'model_type') {
+                const uniqueVals = Array.from(
+                  new Set(actuators.map((a) => (a as any)[key] ?? ''))
+                ).filter(Boolean);
+                filterElement = (
+                  <select
+                    value={filters[key] ?? ''}
+                    onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                    style={headerFilterSelectStyle}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">All</option>
+                    {uniqueVals.map((val) => (
+                      <option key={val} value={val}>
+                        {val}
+                      </option>
+                    ))}
+                  </select>
+                );
+              } else if (typeof firstValue === 'number') {
+                filterElement = (
+                  <div
+                    style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}
+                  >
                     <input
-                      type="text"
-                      placeholder="Filter..."
-                      value={filters[key] ?? ''}
-                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
-                      style={headerFilterInputStyle}
+                      type="number"
+                      placeholder="Min"
+                      value={ranges[key]?.min ?? ''}
+                      onChange={(e) =>
+                        setRanges({ ...ranges, [key]: { ...ranges[key], min: e.target.value } })
+                      }
+                      style={{ ...headerFilterInputStyle, width: 50 }}
                       onClick={(e) => e.stopPropagation()}
                     />
-                  );
-                }
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={ranges[key]?.max ?? ''}
+                      onChange={(e) =>
+                        setRanges({ ...ranges, [key]: { ...ranges[key], max: e.target.value } })
+                      }
+                      style={{ ...headerFilterInputStyle, width: 50 }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                );
+              } else {
+                filterElement = (
+                  <input
+                    type="text"
+                    placeholder="Filter..."
+                    value={filters[key] ?? ''}
+                    onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                    style={headerFilterInputStyle}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                );
               }
 
               return (

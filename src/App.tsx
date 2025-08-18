@@ -9,12 +9,16 @@ import FormulaAdminPage from './components/FormulaAdminPage';
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const isAdmin = user?.is_admin ?? false;
+  const loggedIn = !!user;
   const navigate = useNavigate();
 
-  const handleLogin = React.useCallback((userData: any) => {
-    setUser(userData);
-    navigate('/');
-  }, [navigate]);
+  const handleLogin = React.useCallback(
+    (userData: any) => {
+      setUser(userData);
+      navigate('/');
+    },
+    [navigate]
+  );
 
   const handleLogout = React.useCallback(() => {
     setUser(null);
@@ -25,7 +29,14 @@ export default function App() {
   const contentMaxWidth = 1200;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#0f172a',
+        color: 'white',
+        fontFamily: 'sans-serif',
+      }}
+    >
       {/* Nav bar full width background */}
       <header
         style={{
@@ -48,21 +59,35 @@ export default function App() {
             alignItems: 'center',
           }}
         >
-          <Link to="/" style={{ color: 'skyblue', fontWeight: 'bold', fontSize: '1.2rem', textDecoration: 'none' }}>
+          <Link
+            to="/"
+            style={{
+              color: 'skyblue',
+              fontWeight: 'bold',
+              fontSize: '1.2rem',
+              textDecoration: 'none',
+            }}
+          >
             Actuator Database
           </Link>
           <nav>
             {isAdmin && (
               <Link
                 to="/admin-formulas"
-                style={{ marginRight: '1rem', color: 'lightgreen', textDecoration: 'none' }}
+                style={{
+                  marginRight: '1rem',
+                  color: 'lightgreen',
+                  textDecoration: 'none',
+                }}
               >
                 Edit Formulas
               </Link>
             )}
             {user ? (
               <>
-                <span style={{ marginRight: '1rem' }}>Logged in as: {user.username}</span>
+                <span style={{ marginRight: '1rem' }}>
+                  Logged in as: {user.username}
+                </span>
                 <button onClick={handleLogout} style={buttonStyle}>
                   Logout
                 </button>
@@ -87,8 +112,14 @@ export default function App() {
         }}
       >
         <Routes>
-          <Route path="/" element={<CompareTabView isAdmin={isAdmin} />} />
-          <Route path="/actuator/:id" element={<ActuatorDetail isAdmin={isAdmin} />} />
+          <Route
+            path="/"
+            element={<CompareTabView isAdmin={isAdmin} loggedIn={loggedIn} />}
+          />
+          <Route
+            path="/actuator/:id"
+            element={<ActuatorDetail isAdmin={isAdmin} />}
+          />
           <Route
             path="/add-actuator"
             element={isAdmin ? <ActuatorForm isAdmin={isAdmin} /> : <AccessDenied />}
@@ -106,7 +137,11 @@ export default function App() {
 }
 
 function AccessDenied() {
-  return <p style={{ color: 'tomato' }}>Access denied. You must be an admin to access this page.</p>;
+  return (
+    <p style={{ color: 'tomato' }}>
+      Access denied. You must be an admin to access this page.
+    </p>
+  );
 }
 
 const buttonStyle: React.CSSProperties = {
