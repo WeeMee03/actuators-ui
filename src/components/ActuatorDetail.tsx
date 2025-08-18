@@ -139,7 +139,9 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
         ← Back
       </button>
       <h2>
-        {actuator.manufacturer ?? 'Unknown'} - {actuator.model_type}
+        {isAdmin
+          ? `${actuator.manufacturer ?? 'Unknown'} - ${actuator.model_type}`
+          : 'Restricted Actuator Details'}
       </h2>
 
       {/* Flex container */}
@@ -169,7 +171,11 @@ export default function ActuatorDetail({ isAdmin }: { isAdmin: boolean }) {
             </thead>
             <tbody>
               {Object.entries(editMode ? form : actuator)
-                .filter(([key]) => key !== 'id' && key !== 'created_at')
+                .filter(([key]) => {
+                  if (key === 'id' || key === 'created_at') return false;
+                  if (!isAdmin && (key === 'manufacturer' || key === 'model_type')) return false;
+                  return true;
+                })
                 .map(([key, value]) => (
                   <tr key={key}>
                     <td style={{ fontWeight: 'bold', padding: 8, borderBottom: '1px solid #444' }}>

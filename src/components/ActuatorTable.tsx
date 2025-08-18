@@ -5,10 +5,12 @@ import type { Actuator } from '../types';
 
 export default function ActuatorTable({
   isAdmin,
+  isRestrictedViewer,
   selected,
   setSelected,
 }: {
   isAdmin: boolean;
+  isRestrictedViewer?: boolean;
   selected: Actuator[];
   setSelected: (a: Actuator[]) => void;
 }) {
@@ -18,57 +20,80 @@ export default function ActuatorTable({
   const [ranges, setRanges] = useState<Record<string, { min: string; max: string }>>({});
   const [sortKey, setSortKey] = useState<string>('created_at');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+
+  const [allOptionalHeaders, setAllOptionalHeaders] = useState<{ label: string; key: string }[]>([]);
+  const [visibleOptionalFields, setVisibleOptionalFields] = useState<string[]>([]);
+
   const navigate = useNavigate();
 
-  const allOptionalHeaders = [
-    { label: 'Rated Torque (Nm)', key: 'rated_torque_nm' },
-    { label: 'Peak Torque (Nm)', key: 'peak_torque_nm' },
-    { label: 'Rated Speed (RPM)', key: 'rated_speed_rpm' },
-    { label: 'Diameter (mm)', key: 'overall_diameter_mm' },
-    { label: 'Length (mm)', key: 'overall_length_mm' },
-    { label: 'Gearbox', key: 'gear_box' },
-    { label: 'Gear Ratio', key: 'gear_ratio' },
-    { label: 'Efficiency', key: 'efficiency' },
-    { label: 'Weight (kg)', key: 'weight_kg' },
-    { label: 'DC Voltage (V)', key: 'dc_voltage_v' },
-    { label: 'Peak Torque Density (Nm/kg)', key: 'peak_torque_density_after_gear_nm_per_kg' },
-    { label: 'Built-in Controller', key: 'built_in_controller' },
-    { label: 'Link', key: 'link' },
-    { label: 'Overall Volume (mm³)', key: 'overall_volume_mm3' },
-    { label: 'Rated Torque Before Gear (Nm)', key: 'rated_torque_before_gear_nm' },
-    { label: 'Peak Torque Before Gear (Nm)', key: 'peak_torque_before_gear_nm' },
-    { label: 'Peak Over Rated Torque Ratio', key: 'peak_over_rated_torque_ratio' },
-    { label: 'Rated Speed Before Gear (RPM)', key: 'rated_speed_before_gear_rpm' },
-    { label: 'Rated Torque Density Before Gear (Nm/kg)', key: 'rated_torque_density_before_gear_nm_per_kg' },
-    { label: "Rated Power (kW)", key: "rated_power_kw" },
-    { label: "Peak Power (kW)", key: "peak_power_kw" },
-    { label: "Rated Power Density (kW/kg)", key: "rated_power_density_kw_per_kg" },
-    { label: "Peak Power Density (kW/kg)", key: "peak_power_density_kw_per_kg" },
-  ];
-
-  const [visibleOptionalFields, setVisibleOptionalFields] = useState<string[]>(allOptionalHeaders.map(h => h.key));
-
-  const headers = useMemo(() => {
-    return [
-      { label: 'Manufacturer', key: 'manufacturer' },
-      { label: 'Model Type', key: 'model_type' },
-      ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
-    ];
-  }, [visibleOptionalFields]);
-
   useEffect(() => {
-    async function fetchActuators() {
+    async function fetchActuatorsAndColumns() {
       const { data, error } = await supabase
         .from('actuators')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) console.error('Error:', error);
+      if (error) {
+        console.error('Error fetching actuators:', error);
+        setLoading(false);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const firstRow = data[0];
+        const excludedKeys = ['id', 'created_at', 'manufacturer', 'model_type'];
+
+        const generatedHeaders = Object.keys(firstRow)
+          .filter(k => !excludedKeys.includes(k))
+          .map(k => ({
+            label: formatLabel(k),
+            key: k,
+          }));
+
+        setAllOptionalHeaders(generatedHeaders);
+        setVisibleOptionalFields(generatedHeaders.map(h => h.key));
+      }
+
       setActuators(data ?? []);
       setLoading(false);
     }
-    fetchActuators();
+
+    fetchActuatorsAndColumns();
   }, []);
+
+  // Format column names into nicer labels
+  function formatLabel(key: string) {
+    return key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  // Select all optional fields
+  const selectAllFields = () => {
+    setVisibleOptionalFields(allOptionalHeaders.map(h => h.key));
+  };
+
+  // Clear all optional fields
+  const clearAllFields = () => {
+    setVisibleOptionalFields([]);
+  };
+
+  const headers = useMemo(() => {
+    const baseHeaders = [
+      { label: 'Manufacturer', key: 'manufacturer' },
+      { label: 'Model Type', key: 'model_type' },
+      ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
+    ];
+
+    if (isRestrictedViewer) {
+      return [
+        { label: 'ID', key: 'restricted_id' },
+        ...allOptionalHeaders.filter(h => visibleOptionalFields.includes(h.key)),
+      ];
+    }
+
+    return baseHeaders;
+  }, [allOptionalHeaders, visibleOptionalFields, isRestrictedViewer]);
 
   const toggleSelect = useCallback(
     (actuator: Actuator) => {
@@ -107,9 +132,15 @@ export default function ActuatorTable({
   };
 
   const filteredActuators = useMemo(() => {
-    return [...actuators]
+    const processed = actuators.map((a, index) => ({
+      ...a,
+      restricted_id: `ACT-${String(index + 1).padStart(3, '0')}`,
+    }));
+
+    return [...processed]
       .filter((a) =>
         headers.every(({ key }) => {
+          if (isRestrictedViewer && key === 'restricted_id') return true;
           const value = (a as any)[key];
           if (ranges[key]) return matchesRange(value, ranges[key]);
           return matchesFilter(value, filters[key] ?? '', key);
@@ -127,16 +158,33 @@ export default function ActuatorTable({
           ? valA.toString().localeCompare(valB.toString())
           : valB.toString().localeCompare(valA.toString());
       });
-  }, [actuators, headers, filters, ranges, sortKey, sortAsc]);
+  }, [actuators, headers, filters, ranges, sortKey, sortAsc, isRestrictedViewer]);
 
   if (loading) return <p>Loading actuators...</p>;
 
   return (
-    <div style={{ padding: 24, background: '#0f172a', borderRadius: 12, boxShadow: '0 0 12px rgba(0, 0, 0, 0.3)' }}>
-      {isAdmin && (
+    <div
+      style={{
+        padding: 24,
+        background: '#0f172a',
+        borderRadius: 12,
+        boxShadow: '0 0 12px rgba(0, 0, 0, 0.3)',
+      }}
+    >
+      {isAdmin && !isRestrictedViewer && (
         <button
           onClick={() => navigate('/add-actuator')}
-          style={{ marginBottom: '1rem', padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', borderRadius: 6, border: 'none', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}
+          style={{
+            marginBottom: '1rem',
+            padding: '10px 20px',
+            backgroundColor: '#2563eb',
+            color: 'white',
+            borderRadius: 6,
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+          }}
         >
           + Add Actuator
         </button>
@@ -144,9 +192,54 @@ export default function ActuatorTable({
 
       {/* Field selector UI */}
       <fieldset style={fieldsetStyle}>
-        <legend style={{ color: '#e0e7ff', fontWeight: 600, fontSize: '1.1rem' }}>
+        <legend
+          style={{
+            color: '#e0e7ff',
+            fontWeight: 600,
+            fontSize: '1.1rem',
+          }}
+        >
           Toggle fields to display
         </legend>
+
+        {/* Select All / Clear All buttons */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12, marginTop: 8 }}>
+          <button
+            onClick={selectAllFields}
+            type="button"
+            style={{
+              backgroundColor: '#22c55e',
+              color: 'white',
+              padding: '6px 14px',
+              borderRadius: 6,
+              border: 'none',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            Select All
+          </button>
+          <button
+            onClick={clearAllFields}
+            type="button"
+            style={{
+              backgroundColor: '#ef4444',
+              color: 'white',
+              padding: '6px 14px',
+              borderRadius: 6,
+              border: 'none',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            Clear All
+          </button>
+        </div>
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
           {allOptionalHeaders.map(({ label, key }) => (
             <label key={key} style={checkboxLabelStyle}>
@@ -170,72 +263,80 @@ export default function ActuatorTable({
             {headers.map(({ label, key }) => {
               const firstValue = (actuators[0] as any)?.[key];
 
-              // Filter UI inside header
-              const filterElement = (() => {
+              let filterElement: React.ReactNode = null;
+              if (!isRestrictedViewer || key !== 'restricted_id') {
                 if (key === 'built_in_controller') {
-                  return (
+                  filterElement = (
                     <select
                       value={filters[key] ?? ''}
                       onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
                       style={headerFilterSelectStyle}
-                      onClick={e => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <option value="">All</option>
                       <option value="true">Yes</option>
                       <option value="false">No</option>
                     </select>
                   );
-                }
-                if (typeof firstValue === 'string' && key !== 'model_type') {
-                  const uniqueVals = Array.from(new Set(actuators.map((a) => (a as any)[key] ?? ''))).filter(Boolean);
-                  return (
+                } else if (typeof firstValue === 'string' && key !== 'model_type') {
+                  const uniqueVals = Array.from(
+                    new Set(actuators.map((a) => (a as any)[key] ?? ''))
+                  ).filter(Boolean);
+                  filterElement = (
                     <select
                       value={filters[key] ?? ''}
                       onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
                       style={headerFilterSelectStyle}
-                      onClick={e => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <option value="">All</option>
                       {uniqueVals.map((val) => (
-                        <option key={val} value={val}>{val}</option>
+                        <option key={val} value={val}>
+                          {val}
+                        </option>
                       ))}
                     </select>
                   );
-                }
-                if (typeof firstValue === 'number') {
-                  return (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}>
+                } else if (typeof firstValue === 'number') {
+                  filterElement = (
+                    <div
+                      style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4 }}
+                    >
                       <input
                         type="number"
                         placeholder="Min"
                         value={ranges[key]?.min ?? ''}
-                        onChange={(e) => setRanges({ ...ranges, [key]: { ...ranges[key], min: e.target.value } })}
+                        onChange={(e) =>
+                          setRanges({ ...ranges, [key]: { ...ranges[key], min: e.target.value } })
+                        }
                         style={{ ...headerFilterInputStyle, width: 50 }}
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                       />
                       <input
                         type="number"
                         placeholder="Max"
                         value={ranges[key]?.max ?? ''}
-                        onChange={(e) => setRanges({ ...ranges, [key]: { ...ranges[key], max: e.target.value } })}
+                        onChange={(e) =>
+                          setRanges({ ...ranges, [key]: { ...ranges[key], max: e.target.value } })
+                        }
                         style={{ ...headerFilterInputStyle, width: 50 }}
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                   );
+                } else {
+                  filterElement = (
+                    <input
+                      type="text"
+                      placeholder="Filter..."
+                      value={filters[key] ?? ''}
+                      onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
+                      style={headerFilterInputStyle}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  );
                 }
-                // Default text filter for string columns including model_type
-                return (
-                  <input
-                    type="text"
-                    placeholder="Filter..."
-                    value={filters[key] ?? ''}
-                    onChange={(e) => setFilters({ ...filters, [key]: e.target.value })}
-                    style={headerFilterInputStyle}
-                    onClick={e => e.stopPropagation()}
-                  />
-                );
-              })();
+              }
 
               return (
                 <th
@@ -249,10 +350,12 @@ export default function ActuatorTable({
                     }
                   }}
                   style={{ ...thStyle, cursor: 'pointer', verticalAlign: 'top' }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#475569')}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#0f172a')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#475569')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#0f172a')}
                 >
-                  <div>{label} {sortKey === key ? (sortAsc ? '▲' : '▼') : ''}</div>
+                  <div>
+                    {label} {sortKey === key ? (sortAsc ? '▲' : '▼') : ''}
+                  </div>
                   <div>{filterElement}</div>
                 </th>
               );
@@ -264,18 +367,34 @@ export default function ActuatorTable({
             <tr
               key={a.id}
               onClick={() => navigate(`/actuator/${a.id}`)}
-              style={{ backgroundColor: i % 2 === 0 ? '#1e293b' : '#0f172a', cursor: 'pointer', transition: 'background-color 0.2s' }}
+              style={{
+                backgroundColor: i % 2 === 0 ? '#1e293b' : '#0f172a',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+              }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#334155')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#1e293b' : '#0f172a')}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = i % 2 === 0 ? '#1e293b' : '#0f172a')
+              }
             >
               <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                <input type="checkbox" checked={selected.some((x) => x.id === a.id)} onChange={() => toggleSelect(a)} />
+                <input
+                  type="checkbox"
+                  checked={selected.some((x) => x.id === a.id)}
+                  onChange={() => toggleSelect(a)}
+                />
               </td>
               {headers.map(({ key }) => {
-                const val = (a as any)[key];
+                let val = (a as any)[key];
                 return (
                   <td key={key} style={tdStyle}>
-                    {key === 'built_in_controller' ? (val === true ? 'Yes' : val === false ? 'No' : '-') : val ?? '-'}
+                    {key === 'built_in_controller'
+                      ? val === true
+                        ? 'Yes'
+                        : val === false
+                        ? 'No'
+                        : '-'
+                      : val ?? '-'}
                   </td>
                 );
               })}
