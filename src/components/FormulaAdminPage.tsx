@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { computeFormula } from "../lib/formulaUtils";
 
 type Formula = {
   id: string;
@@ -62,6 +63,44 @@ export default function FormulaAdminPage() {
     return data || [];
   }
 
+  function computeValue(actuator: any, formula: string) {
+    return computeFormula(actuator, formula);
+  }
+
+  async function recomputeAllActuators() {
+    const { data: formulasData, error: fetchFormulasError } = await supabase
+      .from("formulas")
+      .select("*")
+      .eq("is_active", true);
+
+    if (fetchFormulasError) {
+      console.error("Error fetching formulas:", fetchFormulasError);
+      return;
+    }
+
+    const actuatorsData = await fetchActuators();
+
+    for (const actuator of actuatorsData) {
+      const updateData: Record<string, any> = {};
+
+      for (const formula of formulasData || []) {
+        const value = computeValue(actuator, formula.formula);
+
+        updateData[formula.field_name] =
+          value !== null ? Number(value.toFixed(2)) : null;
+      }
+
+      const { error } = await supabase
+        .from("actuators")
+        .update(updateData)
+        .eq("id", actuator.id);
+
+      if (error) {
+        console.error(`Failed to update actuator ${actuator.id}:`, error);
+      }
+    }
+  }
+
   async function handleAddFormula() {
     const { field_name, formula, units } = newField;
     if (!field_name || !formula) return;
@@ -85,27 +124,13 @@ export default function FormulaAdminPage() {
 
     setNewField({ field_name: "", formula: "", units: "" });
     setAddStatus("success");
+
+    await recomputeAllActuators();
     await fetchFormulas();
+
     setTimeout(() => setAddStatus("idle"), 2000);
   }
 
-  // Helper: compute formula result safely
-  function computeValue(actuator: any, formula: string) {
-    try {
-      const keys = Object.keys(actuator);
-      const values = Object.values(actuator);
-      const fn = new Function(...keys, `return ${formula};`);
-      const result = fn(...values);
-      if (typeof result === "number" && !isFinite(result)) {
-        return null;
-      }
-      return result;
-    } catch {
-      return null;
-    }
-  }
-
-  // Save formula AND update actuator fields accordingly
   async function saveFormula(id: string) {
     setFormulas((prev) =>
       prev.map((f) => (f.id === id ? { ...f, saveStatus: "saving" } : f))
@@ -114,7 +139,6 @@ export default function FormulaAdminPage() {
     const formulaToSave = formulas.find((f) => f.id === id);
     if (!formulaToSave) return;
 
-    // Update formula text in formulas table
     const { error: formulaError } = await supabase
       .from("formulas")
       .update({ formula: formulaToSave.editedFormula })
@@ -128,27 +152,8 @@ export default function FormulaAdminPage() {
       return;
     }
 
-    // Fetch all actuators to update their computed field
-    const actuatorsData = await fetchActuators();
+    await recomputeAllActuators();
 
-    // Update each actuator with the computed value for this formula
-    for (const actuator of actuatorsData) {
-      const value = computeValue(actuator, formulaToSave.editedFormula);
-      const updateData: any = {};
-      updateData[formulaToSave.field_name] = value;
-
-      const { error } = await supabase
-        .from("actuators")
-        .update(updateData)
-        .eq("id", actuator.id);
-
-      if (error) {
-        console.error(`Failed to update actuator ${actuator.id}:`, error);
-        // optionally handle error
-      }
-    }
-
-    // Update local state
     setFormulas((prev) =>
       prev.map((f) =>
         f.id === id
@@ -180,14 +185,15 @@ export default function FormulaAdminPage() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-8 max-w-7xl mx-auto">
       <h1 className="text-3xl font-semibold mb-8">Formula Editor (Admin)</h1>
+
       {loading ? (
         <p className="text-lg">Loading formulas...</p>
       ) : (
-        <>
+        <div className="flex flex-col gap-6">
           {/* Add New Formula Form */}
-          <div className="mb-12 p-6 border rounded-lg bg-gray-50 shadow-sm">
+          <div className="p-6 border rounded-lg bg-gray-50 shadow-sm">
             <h2 className="text-2xl font-semibold mb-6 text-gray-800">
               ➕ Add New Formula
             </h2>
@@ -270,70 +276,74 @@ export default function FormulaAdminPage() {
           </div>
 
           {/* Formula Table */}
-          <table className="w-full border border-gray-300 text-base">
-            <thead className="bg-gray-100 text-left">
-              <tr>
-                <th className="p-3 font-medium">Field</th>
-                <th className="p-3 font-medium">Formula</th>
-                <th className="p-3 font-medium">Units</th>
-                <th className="p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {formulas.map((f) => {
-                const hasChanges = f.editedFormula !== f.formula;
-                return (
-                  <tr key={f.id} className="align-top">
-                    <td className="border-t p-3 font-mono text-sm">{f.field_name}</td>
-                    <td className="border-t p-3">
-                      <textarea
-                        className="w-full p-2 border rounded font-mono text-sm resize-y min-h-[60px] bg-white"
-                        value={f.editedFormula}
-                        onChange={(e) =>
-                          setFormulas((prev) =>
-                            prev.map((row) =>
-                              row.id === f.id
-                                ? { ...row, editedFormula: e.target.value }
-                                : row
+          <div className="overflow-x-auto">
+            <table className="w-full border border-gray-300 text-base">
+              <thead className="bg-gray-100 text-left">
+                <tr>
+                  <th className="p-3 font-medium">Field</th>
+                  <th className="p-3 font-medium">Formula</th>
+                  <th className="p-3 font-medium">Units</th>
+                  <th className="p-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {formulas.map((f) => {
+                  const hasChanges = f.editedFormula !== f.formula;
+                  return (
+                    <tr key={f.id} className="align-top">
+                      <td className="border-t p-3 font-mono text-sm">
+                        {f.field_name}
+                      </td>
+                      <td className="border-t p-3">
+                        <textarea
+                          className="w-full p-2 border rounded font-mono text-sm resize-y min-h-[60px] bg-white"
+                          value={f.editedFormula}
+                          onChange={(e) =>
+                            setFormulas((prev) =>
+                              prev.map((row) =>
+                                row.id === f.id
+                                  ? { ...row, editedFormula: e.target.value }
+                                  : row
+                              )
                             )
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="border-t p-3">{f.units || "-"}</td>
-                    <td className="border-t p-3 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-                      <button
-                        className={`px-4 py-2 text-white text-sm rounded transition ${
-                          hasChanges
-                            ? "bg-blue-600 hover:bg-blue-700"
-                            : "bg-gray-400 cursor-not-allowed"
-                        }`}
-                        onClick={() => hasChanges && saveFormula(f.id)}
-                        disabled={!hasChanges}
-                      >
-                        {f.saveStatus === "saving"
-                          ? "Saving..."
-                          : f.saveStatus === "saved"
-                          ? "Saved!"
-                          : "Save"}
-                      </button>
-                      <button
-                        className="px-4 py-2 text-white text-sm rounded bg-red-600 hover:bg-red-700 transition"
-                        onClick={() => handleDeleteFormula(f.id)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                      {f.saveStatus === "error" && (
-                        <span className="text-red-600 text-sm">Failed</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </>
+                          }
+                        />
+                      </td>
+                      <td className="border-t p-3">{f.units || "-"}</td>
+                      <td className="border-t p-3 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                        <button
+                          className={`px-4 py-2 text-white text-sm rounded transition ${
+                            hasChanges
+                              ? "bg-blue-600 hover:bg-blue-700"
+                              : "bg-gray-400 cursor-not-allowed"
+                          }`}
+                          onClick={() => hasChanges && saveFormula(f.id)}
+                          disabled={!hasChanges}
+                        >
+                          {f.saveStatus === "saving"
+                            ? "Saving..."
+                            : f.saveStatus === "saved"
+                            ? "Saved!"
+                            : "Save"}
+                        </button>
+                        <button
+                          className="px-4 py-2 text-white text-sm rounded bg-red-600 hover:bg-red-700 transition"
+                          onClick={() => handleDeleteFormula(f.id)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                        {f.saveStatus === "error" && (
+                          <span className="text-red-600 text-sm">Failed</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );
