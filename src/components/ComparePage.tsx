@@ -18,9 +18,11 @@ import {
 export default function ComparePage({
   actuators,
   setSelected,
+  loggedIn,
 }: {
   actuators: Actuator[];
   setSelected: (a: Actuator[]) => void;
+  loggedIn: boolean;
 }) {
   const [mode, setMode] = useState<'table' | 'radar' | 'bar'>('table');
   const thStyle = {
@@ -82,11 +84,16 @@ export default function ComparePage({
     },
   ];
 
-  const [visibleFields, setVisibleFields] = useState<string[]>(fields.map((f) => f.key));
+  const filteredFields = useMemo(() => {
+    if (loggedIn) return fields;
+    return fields.filter((f) => f.key !== 'manufacturer' && f.key !== 'model_type');
+  }, [loggedIn, fields]);
+
+  const [visibleFields, setVisibleFields] = useState<string[]>(filteredFields.map((f) => f.key));
   const [radarFields, setRadarFields] = useState<string[]>([]);
   const numericFields = useMemo(() =>
-    fields.filter((f) => actuators.every((a) => typeof f.get(a) === 'number' || f.get(a) == null)),
-    [fields, actuators]
+    filteredFields.filter((f) => actuators.every((a) => typeof f.get(a) === 'number' || f.get(a) == null)),
+    [filteredFields, actuators]
   );
   const [barChartField, setBarChartField] = useState(numericFields[0]?.key || '');
 
@@ -190,6 +197,22 @@ export default function ComparePage({
     });
   }, [getNormalizedScores, weights, numericFields]);
 
+  const selectAllFields = useCallback(() => {
+    setVisibleFields(fields.map((f) => f.key));
+  }, [fields]);
+
+  const clearAllFields = useCallback(() => {
+    setVisibleFields([]);
+  }, []);
+
+  const selectAllRadarFields = useCallback(() => {
+    setRadarFields(numericFields.map((f) => f.key));
+  }, [numericFields]);
+
+  const clearAllRadarFields = useCallback(() => {
+    setRadarFields([]);
+  }, []);
+
   if (actuators.length === 0) {
     return <p style={{ color: '#f1f5f9' }}>No actuators selected. Please select from the table first.</p>;
   }
@@ -260,6 +283,14 @@ export default function ComparePage({
         </div>
       )}
 
+      {/* Add buttons for Select All and Clear All in the table section */}
+      {mode === 'table' && (
+        <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+          <button onClick={selectAllFields} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Select All</button>
+          <button onClick={clearAllFields} style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
+        </div>
+      )}
+
       {/* Radar Chart Section */}
       {mode === 'radar' && (
         <div style={{ flex: '1 1 400px', height: 400, marginBottom: '2rem' }}>
@@ -275,6 +306,11 @@ export default function ComparePage({
                 {f.label}
               </label>
             ))}
+          </div>
+          {/* Add buttons for Select All and Clear All in the radar chart section */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '0.5rem' }}>
+            <button onClick={selectAllRadarFields} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Select All</button>
+            <button onClick={clearAllRadarFields} style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
           </div>
           <ResponsiveContainer width="100%" height="85%">
             <RadarChart data={radarData}>

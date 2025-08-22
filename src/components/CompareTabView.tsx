@@ -60,7 +60,11 @@ export default function CompareTabView({
       </div>
 
       <div style={{ display: tab === 'compare' ? 'block' : 'none' }}>
-        <ComparePage actuators={selected} setSelected={setSelected} />
+        <ComparePage
+          actuators={selected}
+          setSelected={setSelected}
+          loggedIn={loggedIn}
+        />
       </div>
     </div>
   );
