@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { computeFormula } from "../lib/formulaUtils";
+import { create, all } from "mathjs";
 import type { Actuator } from "../types";
+
+const math = create(all);
+
+type FormState = Partial<Actuator> & Record<string, any>;
 
 export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
   const navigate = useNavigate();
-  const [form, setForm] = useState<Partial<Actuator>>({});
+  const [form, setForm] = useState<FormState>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formulas, setFormulas] = useState<{ field_name: string; formula: string }[]>([]);
@@ -23,7 +27,7 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     "dc_voltage_v",
   ];
 
-  // 🧩 Fetch active formulas from Supabase
+  // Fetch active formulas from Supabase
   useEffect(() => {
     const fetchFormulas = async () => {
       const { data, error } = await supabase
@@ -37,35 +41,13 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     fetchFormulas();
   }, []);
 
-  // 🚫 Redirect non-admins
+  // Redirect non-admins
   useEffect(() => {
     if (!isAdmin) {
       alert("Access denied. Admins only.");
       navigate("/");
     }
   }, [isAdmin, navigate]);
-
-  const fields: { label: string; key: keyof Actuator }[] = [
-    { label: "Manufacturer", key: "manufacturer" },
-    { label: "Model Type", key: "model_type" },
-    { label: "Overall Diameter (mm)", key: "overall_diameter_mm" },
-    { label: "Overall Length (mm)", key: "overall_length_mm" },
-    { label: "Gear Box", key: "gear_box" },
-    { label: "Gear Ratio", key: "gear_ratio" },
-    { label: "Rated Torque (Nm)", key: "rated_torque_nm" },
-    { label: "Peak Torque (Nm)", key: "peak_torque_nm" },
-    { label: "Rated Speed (rpm)", key: "rated_speed_rpm" },
-    { label: "Efficiency", key: "efficiency" },
-    { label: "Weight (kg)", key: "weight_kg" },
-    { label: "Built-in Controller", key: "built_in_controller" },
-    { label: "DC Voltage (V)", key: "dc_voltage_v" },
-    { label: "Link", key: "link" },
-  ];
-
-  // 🔢 Compute derived value using the same method as FormulaAdminPage
-  const computeValue = (actuator: any, formula: string) => {
-    return computeFormula(actuator, formula);
-  };
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -79,41 +61,36 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
         context[k] = numberFields.includes(k) ? Number(v) || 0 : v;
       });
 
-      console.log("Context before computation:", context);
-
-      // Compute derived fields
-      const derivedValues: Record<string, any> = {};
-      for (const { field_name, formula } of formulas) {
-        const value = computeValue(context, formula);
-        derivedValues[field_name] = value;
-        context[field_name] = value; // for formulas depending on other derived fields
+      if (formulas.length === 0) {
+        setError("No active formulas available. Please contact an administrator.");
+        setLoading(false);
+        return;
       }
 
-      console.log("Derived values:", derivedValues);
-
-      const finalData = { ...form, ...derivedValues };
-
-      // Clean finalData: convert empty strings to null
-      const cleanedData = Object.fromEntries(
-        Object.entries(finalData).map(([k, v]) => {
-          if (numberFields.includes(k)) {
-            return [k, v === "" || v === null || v === undefined ? null : Number(v)];
-          } else if (typeof v === "string" && v.trim() === "") {
-            return [k, null];
+      // Compute derived fields
+      let finalData = { ...context };
+      try {
+        formulas.forEach(({ field_name, formula }) => {
+          try {
+            finalData[field_name] = math.evaluate(formula, finalData);
+          } catch (error) {
+            console.error(`Error evaluating formula for ${field_name}:`, error);
           }
-          return [k, v];
-        })
-      );
+        });
+      } catch (error) {
+        console.error("Error computing derived fields:", error);
+        setError("Failed to compute derived fields. Please check your input.");
+        setLoading(false);
+        return;
+      }
 
-      console.log("Final data to insert:", cleanedData);
-
-      const { error } = await supabase.from("actuators").insert([cleanedData]);
+      const { error: insertError } = await supabase.from("actuators").insert([finalData]);
       setLoading(false);
 
-      if (error) {
+      if (insertError) {
         setError("Failed to insert actuator.");
-        console.error("Supabase insert error:", error);
-        alert(`Insert failed: ${error.message}`);
+        console.error("Supabase insert error:", insertError);
+        alert(`Insert failed: ${insertError.message}`);
       } else {
         navigate("/");
       }
@@ -125,45 +102,18 @@ export default function ActuatorForm({ isAdmin }: { isAdmin: boolean }) {
     <div style={{ maxWidth: 600, margin: "0 auto", color: "white", padding: "2rem" }}>
       <h2>Add New Actuator</h2>
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-        {fields.map(({ label, key }) => (
+        {/* Render form fields dynamically */}
+        {Object.keys(form).map((key) => (
           <label key={key} style={{ display: "flex", flexDirection: "column" }}>
-            {label}
-            {key === "built_in_controller" ? (
-              <select
-                value={form[key] === true ? "true" : form[key] === false ? "false" : ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    [key]: e.target.value === "true" ? true : e.target.value === "false" ? false : null,
-                  })
-                }
-                style={inputStyle}
-              >
-                <option value="">Select</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            ) : key === "gear_box" ? (
-              <select
-                value={form[key] ?? ""}
-                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                style={inputStyle}
-              >
-                <option value="">Select Gear Box</option>
-                <option value="harmonic">Harmonic</option>
-                <option value="planetary">Planetary</option>
-              </select>
-            ) : (
-              <input
-                type={numberFields.includes(key) ? "number" : "text"}
-                value={form[key] ?? ""}
-                onChange={(e) => {
-                  const val = numberFields.includes(key) ? (e.target.value === "" ? null : Number(e.target.value)) : e.target.value;
-                  setForm({ ...form, [key]: val });
-                }}
-                style={inputStyle}
-              />
-            )}
+            {key}
+            <input
+              type={numberFields.includes(key) ? "number" : "text"}
+              value={form[key] || ""}
+              onChange={(e) =>
+                setForm({ ...form, [key]: numberFields.includes(key) ? Number(e.target.value) : e.target.value })
+              }
+              style={inputStyle}
+            />
           </label>
         ))}
 

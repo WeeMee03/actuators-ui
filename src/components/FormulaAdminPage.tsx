@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { computeFormula } from "../lib/formulaUtils";
+import { create, all } from "mathjs";
+
+const math = create(all);
 
 type Formula = {
   id: string;
   field_name: string;
   formula: string;
-  units: string | null;
   is_active: boolean;
 };
 
@@ -17,334 +18,152 @@ type FormulaWithEdit = Formula & {
 
 export default function FormulaAdminPage() {
   const [formulas, setFormulas] = useState<FormulaWithEdit[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [newField, setNewField] = useState({
-    field_name: "",
-    formula: "",
-    units: "",
-  });
-  const [addStatus, setAddStatus] = useState<
-    "idle" | "adding" | "success" | "error"
-  >("idle");
+  const [newField, setNewField] = useState({ field_name: "", formula: "" });
 
   useEffect(() => {
     fetchFormulas();
   }, []);
 
   async function fetchFormulas() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("formulas")
-      .select("*")
-      .order("field_name");
-
-    if (error) {
-      console.error("Error fetching formulas:", error);
-      setFormulas([]);
-    } else {
-      setFormulas(
-        (data || []).map((f) => ({
-          ...f,
-          editedFormula: f.formula,
-          saveStatus: "idle",
-        }))
-      );
-    }
-    setLoading(false);
+    const { data, error } = await supabase.from("formulas").select("*").order("field_name");
+    if (error) return console.error(error);
+    setFormulas((data || []).map((f) => ({ ...f, editedFormula: f.formula, saveStatus: "idle" })));
   }
 
   async function fetchActuators() {
     const { data, error } = await supabase.from("actuators").select("*");
-    if (error) {
-      console.error("Error fetching actuators:", error);
-      return [];
-    }
+    if (error) return [];
     return data || [];
   }
 
-  function computeValue(actuator: any, formula: string) {
-    return computeFormula(actuator, formula);
+  /** Compute formulas with math constants/functions available */
+  function computeAllFormulas(context: Record<string, any>, formulas: { field_name: string; formula: string }[]) {
+    const updated = { ...context };
+    for (const { field_name, formula } of formulas) {
+      try {
+        // Merge mathjs constants/functions into context
+        updated[field_name] = math.evaluate(formula, { ...updated, ...math });
+      } catch (e) {
+        console.error(`Error evaluating ${field_name}:`, e);
+      }
+    }
+    return updated;
   }
 
   async function recomputeAllActuators() {
-    const { data: formulasData, error: fetchFormulasError } = await supabase
-      .from("formulas")
-      .select("*")
-      .eq("is_active", true);
+    const { data: activeFormulas } = await supabase.from("formulas").select("*").eq("is_active", true);
+    if (!activeFormulas) return;
 
-    if (fetchFormulasError) {
-      console.error("Error fetching formulas:", fetchFormulasError);
-      return;
+    const actuators = await fetchActuators();
+    for (const a of actuators) {
+      const updated = computeAllFormulas(a, activeFormulas);
+      await supabase.from("actuators").update(updated).eq("id", a.id);
     }
-
-    const actuatorsData = await fetchActuators();
-
-    for (const actuator of actuatorsData) {
-      const updateData: Record<string, any> = {};
-
-      for (const formula of formulasData || []) {
-        const value = computeValue(actuator, formula.formula);
-
-        updateData[formula.field_name] =
-          value !== null ? Number(value.toFixed(2)) : null;
-      }
-
-      const { error } = await supabase
-        .from("actuators")
-        .update(updateData)
-        .eq("id", actuator.id);
-
-      if (error) {
-        console.error(`Failed to update actuator ${actuator.id}:`, error);
-      }
-    }
-  }
-
-  async function handleAddFormula() {
-    const { field_name, formula, units } = newField;
-    if (!field_name || !formula) return;
-
-    setAddStatus("adding");
-
-    const { error: insertError } = await supabase.from("formulas").insert([
-      {
-        field_name,
-        formula,
-        units: units || null,
-        is_active: true,
-      },
-    ]);
-
-    if (insertError) {
-      console.error("Failed to add formula:", insertError);
-      setAddStatus("error");
-      return;
-    }
-
-    setNewField({ field_name: "", formula: "", units: "" });
-    setAddStatus("success");
-
-    await recomputeAllActuators();
-    await fetchFormulas();
-
-    setTimeout(() => setAddStatus("idle"), 2000);
   }
 
   async function saveFormula(id: string) {
+    const formulaToSave = formulas.find((f) => f.id === id);
+    if (!formulaToSave) return;
+
     setFormulas((prev) =>
       prev.map((f) => (f.id === id ? { ...f, saveStatus: "saving" } : f))
     );
 
-    const formulaToSave = formulas.find((f) => f.id === id);
-    if (!formulaToSave) return;
+    const { error } = await supabase.from("formulas").update({ formula: formulaToSave.editedFormula }).eq("id", id);
 
-    const { error: formulaError } = await supabase
-      .from("formulas")
-      .update({ formula: formulaToSave.editedFormula })
-      .eq("id", id);
-
-    if (formulaError) {
-      console.error("Failed to save formula:", formulaError);
+    if (error) {
+      console.error(error);
+      setFormulas((prev) => prev.map((f) => (f.id === id ? { ...f, saveStatus: "error" } : f)));
+    } else {
       setFormulas((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, saveStatus: "error" } : f))
+        prev.map((f) => (f.id === id ? { ...f, formula: f.editedFormula, saveStatus: "saved" } : f))
       );
-      return;
+      await recomputeAllActuators();
     }
-
-    await recomputeAllActuators();
-
-    setFormulas((prev) =>
-      prev.map((f) =>
-        f.id === id
-          ? {
-              ...f,
-              formula: formulaToSave.editedFormula,
-              saveStatus: "saved",
-            }
-          : f
-      )
-    );
-
-    setTimeout(() => {
-      setFormulas((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, saveStatus: "idle" } : f))
-      );
-    }, 2000);
   }
 
-  async function handleDeleteFormula(id: string) {
-    if (!window.confirm("Are you sure you want to delete this formula?")) return;
-    const { error } = await supabase.from("formulas").delete().eq("id", id);
-    if (error) {
-      alert("Failed to delete formula.");
-      console.error(error);
-    } else {
-      setFormulas((prev) => prev.filter((f) => f.id !== id));
+  async function addFormula() {
+    if (!newField.field_name || !newField.formula) return;
+
+    const { error } = await supabase.from("formulas").insert([
+      { field_name: newField.field_name, formula: newField.formula, is_active: true },
+    ]);
+
+    if (error) return console.error(error);
+
+    // Add new field with default 0 to all actuators
+    const actuators = await fetchActuators();
+    for (const a of actuators) {
+      await supabase.from("actuators").update({ [newField.field_name]: 0 }).eq("id", a.id);
     }
+
+    setNewField({ field_name: "", formula: "" });
+    await fetchFormulas();
+    await recomputeAllActuators();
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-semibold mb-8">Formula Editor (Admin)</h1>
+    <div className="p-8 max-w-5xl mx-auto">
+      <h1 className="text-3xl font-semibold mb-8">Formula Editor</h1>
 
-      {loading ? (
-        <p className="text-lg">Loading formulas...</p>
-      ) : (
-        <div className="flex flex-col gap-6">
-          {/* Add New Formula Form */}
-          <div className="p-6 border rounded-lg bg-gray-50 shadow-sm">
-            <h2 className="text-2xl font-semibold mb-6 text-gray-800">
-              ➕ Add New Formula
-            </h2>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAddFormula();
-              }}
-              className="grid grid-cols-1 sm:grid-cols-3 gap-6"
-            >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Field Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. torque_per_kg"
-                  className="w-full p-2 border rounded-md focus:outline-none focus:ring focus:border-blue-300"
-                  value={newField.field_name}
-                  onChange={(e) =>
-                    setNewField({ ...newField, field_name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Formula
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. peak_torque_nm / weight_kg"
-                  className="w-full p-2 border rounded-md font-mono text-sm focus:outline-none focus:ring focus:border-blue-300"
-                  value={newField.formula}
-                  onChange={(e) =>
-                    setNewField({ ...newField, formula: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Units (optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Nm/kg"
-                  className="w-full p-2 border rounded-md focus:outline-none focus:ring focus:border-blue-300"
-                  value={newField.units}
-                  onChange={(e) =>
-                    setNewField({ ...newField, units: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="sm:col-span-3 flex items-center gap-4 mt-2">
-                <button
-                  type="submit"
-                  className={`px-5 py-2 rounded-md text-white transition ${
-                    addStatus === "adding"
-                      ? "bg-blue-400 cursor-wait"
-                      : "bg-green-600 hover:bg-green-700"
-                  }`}
-                  disabled={addStatus === "adding"}
-                >
-                  {addStatus === "adding"
-                    ? "Adding..."
-                    : addStatus === "success"
-                    ? "Added!"
-                    : "Add Formula"}
-                </button>
-
-                {addStatus === "error" && (
-                  <span className="text-red-600 text-sm">
-                    Failed to add formula
-                  </span>
-                )}
-              </div>
-            </form>
-          </div>
-
-          {/* Formula Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full border border-gray-300 text-base">
-              <thead className="bg-gray-100 text-left">
-                <tr>
-                  <th className="p-3 font-medium">Field</th>
-                  <th className="p-3 font-medium">Formula</th>
-                  <th className="p-3 font-medium">Units</th>
-                  <th className="p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {formulas.map((f) => {
-                  const hasChanges = f.editedFormula !== f.formula;
-                  return (
-                    <tr key={f.id} className="align-top">
-                      <td className="border-t p-3 font-mono text-sm">
-                        {f.field_name}
-                      </td>
-                      <td className="border-t p-3">
-                        <textarea
-                          className="w-full p-2 border rounded font-mono text-sm resize-y min-h-[60px] bg-white"
-                          value={f.editedFormula}
-                          onChange={(e) =>
-                            setFormulas((prev) =>
-                              prev.map((row) =>
-                                row.id === f.id
-                                  ? { ...row, editedFormula: e.target.value }
-                                  : row
-                              )
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="border-t p-3">{f.units || "-"}</td>
-                      <td className="border-t p-3 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-                        <button
-                          className={`px-4 py-2 text-white text-sm rounded transition ${
-                            hasChanges
-                              ? "bg-blue-600 hover:bg-blue-700"
-                              : "bg-gray-400 cursor-not-allowed"
-                          }`}
-                          onClick={() => hasChanges && saveFormula(f.id)}
-                          disabled={!hasChanges}
-                        >
-                          {f.saveStatus === "saving"
-                            ? "Saving..."
-                            : f.saveStatus === "saved"
-                            ? "Saved!"
-                            : "Save"}
-                        </button>
-                        <button
-                          className="px-4 py-2 text-white text-sm rounded bg-red-600 hover:bg-red-700 transition"
-                          onClick={() => handleDeleteFormula(f.id)}
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                        {f.saveStatus === "error" && (
-                          <span className="text-red-600 text-sm">Failed</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      {/* Add New Formula */}
+      <div className="mb-6 p-4 border rounded bg-gray-50">
+        <h2 className="font-semibold mb-2">Add New Formula</h2>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Field Name"
+            value={newField.field_name}
+            onChange={(e) => setNewField({ ...newField, field_name: e.target.value })}
+            className="border p-2 rounded flex-1"
+          />
+          <input
+            type="text"
+            placeholder="Formula"
+            value={newField.formula}
+            onChange={(e) => setNewField({ ...newField, formula: e.target.value })}
+            className="border p-2 rounded flex-1"
+          />
+          <button onClick={addFormula} className="bg-blue-600 text-white px-4 rounded">Add</button>
         </div>
-      )}
+      </div>
+
+      {/* Edit Formulas */}
+      <table className="w-full border border-gray-300">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="p-2 border">Field</th>
+            <th className="p-2 border">Formula</th>
+            <th className="p-2 border">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {formulas.map((f) => (
+            <tr key={f.id}>
+              <td className="border p-2">{f.field_name}</td>
+              <td className="border p-2">
+                <input
+                  value={f.editedFormula}
+                  onChange={(e) =>
+                    setFormulas((prev) =>
+                      prev.map((row) => (row.id === f.id ? { ...row, editedFormula: e.target.value } : row))
+                    )
+                  }
+                  className="w-full border p-1 rounded"
+                />
+              </td>
+              <td className="border p-2">
+                <button
+                  onClick={() => saveFormula(f.id)}
+                  className={`px-3 py-1 rounded text-white ${f.saveStatus === "saved" ? "bg-green-600" : "bg-blue-600"}`}
+                >
+                  {f.saveStatus === "saving" ? "Saving..." : f.saveStatus === "saved" ? "Saved" : "Save"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
